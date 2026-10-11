@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { isWindows } from "./platform";
 import { readerConfig } from "./readerConfig.svelte";
-import { schemeUrl } from "./scheme";
+import { audiobookUrl, schemeUrl } from "./scheme";
 import { sasayakiConfig } from "./sasayakiConfig.svelte";
 import type { SasayakiImage, SasayakiMatch, SasayakiMatchData, SasayakiPlayback } from "./types";
 
@@ -432,7 +432,7 @@ export class SasayakiPlayer {
   }
 
   private setupPlayer() {
-    const audio = new Audio(schemeUrl("audiobook", this.id) + `?t=${Date.now()}`);
+    const audio = new Audio(audiobookUrl(this.id) + `?t=${Date.now()}`);
     this.setupMediaSession(audio);
     audio.preload = "auto";
     audio.playbackRate = this.rate;

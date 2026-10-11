@@ -24,6 +24,35 @@ window.hoshiReader = {
         const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
         return !!el?.closest('rt, rp');
     },
+
+    // WebKitGTK (Linux) has neither the macOS/Windows Japanese fonts nor applies
+    // the vertical glyph forms of 、。「」（）ー… on its own in vertical text.
+    isWebKitGtk: !navigator.userAgent.includes('Chrome/') && /Linux/.test(navigator.userAgent)
+        && !/Android/.test(navigator.userAgent),
+
+    fontStack(fontName) {
+        // Names the Linux Noto CJK packages use for the macOS/Windows defaults. Without
+        // a Japanese family in the stack, fontconfig falls back to a Chinese font.
+        const linuxEquivalent = {
+            'Noto Sans JP': 'Noto Sans CJK JP',
+            'Yu Gothic': 'Noto Sans CJK JP',
+            'Hiragino Kaku Gothic ProN': 'Noto Sans CJK JP',
+            'Noto Serif JP': 'Noto Serif CJK JP',
+            'Yu Mincho': 'Noto Serif CJK JP',
+            'Hiragino Mincho ProN': 'Noto Serif CJK JP',
+        };
+        const families = [fontName, linuxEquivalent[fontName], 'Hiragino Mincho ProN', 'Yu Mincho',
+            'Noto Serif CJK JP', 'Noto Serif JP', 'IPAexMincho', 'IPAMincho'];
+        return [...new Set(families.filter(Boolean))].map((family) => `"${family}"`).join(', ') + ', serif';
+    },
+
+    verticalFormsCss(vertical, selector = 'body') {
+        // WebKitGTK ignores a forced 'vert' here, but 'vrt2' (which includes the 'vert'
+        // substitutions) works; Latin text is still rotated by WebKit as usual.
+        return vertical && this.isWebKitGtk
+            ? `${selector} { font-feature-settings: "vert" 1, "vrt2" 1 !important; }`
+            : '';
+    },
     
     countChars(text) {
         return Array.from(this.normalizeText(text)).length;

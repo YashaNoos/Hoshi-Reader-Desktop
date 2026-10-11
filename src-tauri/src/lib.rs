@@ -14,6 +14,8 @@ mod library;
 mod local_audio;
 #[cfg(windows)]
 mod media_controls;
+#[cfg(target_os = "linux")]
+mod media_server;
 mod menu_theme;
 mod pcm;
 mod sasayaki;
@@ -210,6 +212,8 @@ pub fn run() {
             )?;
             #[cfg(windows)]
             let builder = builder.additional_browser_args(media_controls::BROWSER_ARGS);
+            #[cfg(target_os = "linux")]
+            let builder = builder.initialization_script(media_server::init_script(app.handle()));
             let _window = builder.build()?;
             #[cfg(windows)]
             media_controls::init(&_window).ok();

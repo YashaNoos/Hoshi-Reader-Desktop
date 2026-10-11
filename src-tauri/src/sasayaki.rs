@@ -504,7 +504,7 @@ pub(crate) fn audio_path(app: &AppHandle, id: &str) -> Option<PathBuf> {
     path.is_file().then_some(path)
 }
 
-fn audio_mime(path: &std::path::Path) -> &'static str {
+pub(crate) fn audio_mime(path: &std::path::Path) -> &'static str {
     match path
         .extension()
         .and_then(|ext| ext.to_str())
