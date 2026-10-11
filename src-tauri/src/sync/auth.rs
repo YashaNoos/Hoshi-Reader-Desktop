@@ -39,25 +39,37 @@ pub fn init_store() {
     keyring_core::set_default_store(apple_native_keyring_store::keychain::Store::new().unwrap());
     #[cfg(windows)]
     keyring_core::set_default_store(windows_native_keyring_store::Store::new().unwrap());
+    // Needs a running Secret Service provider (GNOME Keyring, KWallet, ...).
+    // Without one there is no store, and Google Drive sign-in simply fails.
+    #[cfg(target_os = "linux")]
+    match zbus_secret_service_keyring_store::Store::new() {
+        Ok(store) => keyring_core::set_default_store(store),
+        Err(error) => eprintln!("no Secret Service keyring available: {error}"),
+    }
 }
 
-fn entry(key: &str) -> keyring_core::Entry {
-    keyring_core::Entry::new(SERVICE, key).unwrap()
+fn entry(key: &str) -> Option<keyring_core::Entry> {
+    keyring_core::Entry::new(SERVICE, key).ok()
 }
 
 fn get_token(key: &str) -> Option<String> {
-    entry(key).get_password().ok()
+    entry(key)?.get_password().ok()
 }
 
 fn save_token(key: &str, value: &str) -> Result<(), String> {
     entry(key)
+        .ok_or_else(|| format!("Failed to save {key}
+No credential store available"))?
         .set_password(value)
-        .map_err(|e| format!("Failed to save {key}\n{e}"))
+        .map_err(|e| format!("Failed to save {key}
+{e}"))
 }
 
 pub fn clear_tokens() {
     for key in ["accessToken", "refreshToken", "clientId"] {
-        entry(key).delete_credential().ok();
+        if let Some(entry) = entry(key) {
+            entry.delete_credential().ok();
+        }
     }
 }
 

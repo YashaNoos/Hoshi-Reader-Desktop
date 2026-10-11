@@ -85,3 +85,31 @@ fn text() -> Option<String> {
         text
     }
 }
+
+// Linux has no clipboard change counter, so the "count" is a hash of the current
+// text and the text read for it is cached for the `text()` call that follows.
+// Limitation: copying the same text twice in a row is not seen as a change.
+#[cfg(target_os = "linux")]
+static LAST_TEXT: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+#[cfg(target_os = "linux")]
+fn change_count() -> i64 {
+    use std::hash::{Hash, Hasher};
+
+    let current = arboard::Clipboard::new()
+        .and_then(|mut clipboard| clipboard.get_text())
+        .ok()
+        .filter(|text| !text.is_empty());
+    let count = current.as_ref().map_or(0, |text| {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        text.hash(&mut hasher);
+        (hasher.finish() >> 1) as i64
+    });
+    *LAST_TEXT.lock().unwrap() = current;
+    count
+}
+
+#[cfg(target_os = "linux")]
+fn text() -> Option<String> {
+    LAST_TEXT.lock().unwrap().take()
+}
