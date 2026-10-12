@@ -49,9 +49,31 @@ window.hoshiReader = {
     verticalFormsCss(vertical, selector = 'body') {
         // WebKitGTK ignores a forced 'vert' here, but 'vrt2' (which includes the 'vert'
         // substitutions) works; Latin text is still rotated by WebKit as usual.
-        return vertical && this.isWebKitGtk
-            ? `${selector} { font-feature-settings: "vert" 1, "vrt2" 1 !important; }`
-            : '';
+        if (!vertical || !this.isWebKitGtk) return '';
+        return `${selector} { font-feature-settings: "vert" 1, "vrt2" 1 !important; }
+            /* Furigana: WebKitGTK places <rt> at the edge of the font's (hhea) line box,
+               which for CJK fonts is ~0.2em wider than the character on each side. Pull it
+               back to the character's em box, like Chromium/Safari (see fitRubyToEmBox). */
+            @property --hoshi-ruby-gap { syntax: "<length>"; inherits: true; initial-value: 0px; }
+            ruby { --hoshi-ruby-gap: calc(var(--hoshi-ruby-ratio, 0) * 1em); }
+            ruby > rt { transform: translateX(calc(-1 * var(--hoshi-ruby-gap))); }`;
+    },
+
+    fitRubyToEmBox(vertical) {
+        if (!vertical || !this.isWebKitGtk) return;
+        document.fonts.ready.then(() => {
+            const parent = document.querySelector('ruby')?.parentElement;
+            if (!parent) return;
+            const probe = document.createElement('span');
+            probe.textContent = '漢';
+            parent.appendChild(probe);
+            const em = parseFloat(getComputedStyle(probe).fontSize);
+            const lineBox = probe.getBoundingClientRect().width;
+            probe.remove();
+            if (!em || !lineBox) return;
+            const ratio = Math.min(0.5, Math.max(0, (lineBox / em - 1) / 2));
+            document.documentElement.style.setProperty('--hoshi-ruby-ratio', ratio.toFixed(4));
+        });
     },
     
     countChars(text) {

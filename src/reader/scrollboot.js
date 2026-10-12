@@ -271,6 +271,7 @@
                 background-color: var(--hoshi-sasayaki-background-color) !important;
             }
         `;
+        reader.fitRubyToEmBox(vertical);
     }
 
     function applyFont() {
