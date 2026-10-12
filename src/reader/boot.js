@@ -212,6 +212,7 @@
       }
     `;
 
+    r.fitRubyToEmBox(vertical);
     spacers.forEach((spacer) => spacer.remove());
     spacers = [];
     r.spacer = null;
