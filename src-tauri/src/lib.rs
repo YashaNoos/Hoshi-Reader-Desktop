@@ -22,8 +22,10 @@ mod sasayaki;
 mod search;
 mod statistics;
 mod sync;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", all(target_os = "linux", feature = "transcription")))]
 mod transcriber;
+#[cfg(all(target_os = "linux", feature = "transcription"))]
+mod transcription;
 mod ttu_statistics;
 mod updater;
 mod wheel;
@@ -140,17 +142,17 @@ pub fn run() {
             sasayaki::sasayaki_load_playback,
             sasayaki::sasayaki_save_playback,
             sasayaki::sasayaki_audio_chapters,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", all(target_os = "linux", feature = "transcription")))]
             transcriber::sasayaki_transcriber_status,
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(not(any(target_os = "macos", all(target_os = "linux", feature = "transcription"))))]
             sasayaki::sasayaki_transcriber_status,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", all(target_os = "linux", feature = "transcription")))]
             transcriber::sasayaki_load_transcript,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", all(target_os = "linux", feature = "transcription")))]
             transcriber::sasayaki_clear_transcript,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", all(target_os = "linux", feature = "transcription")))]
             transcriber::sasayaki_pause_transcription,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", all(target_os = "linux", feature = "transcription")))]
             transcriber::sasayaki_transcribe,
             #[cfg(windows)]
             media_controls::media_controls_metadata,
