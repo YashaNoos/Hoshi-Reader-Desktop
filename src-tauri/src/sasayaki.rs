@@ -137,13 +137,13 @@ fn find_unique(source: &[char], text: &[char], start: usize) -> Option<usize> {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Chapter {
-    chapter_index: usize,
-    start: usize,
-    length: usize,
+    pub(crate) chapter_index: usize,
+    pub(crate) start: usize,
+    pub(crate) length: usize,
 }
 
 impl Chapter {
-    fn end(&self) -> usize {
+    pub(crate) fn end(&self) -> usize {
         self.start + self.length
     }
 }
@@ -151,11 +151,11 @@ impl Chapter {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Source {
-    text: Vec<char>,
-    sentence_ends: Vec<bool>,
-    segment_ends: Vec<bool>,
-    chapters: Vec<Chapter>,
-    images: Vec<SasayakiImage>,
+    pub(crate) text: Vec<char>,
+    pub(crate) sentence_ends: Vec<bool>,
+    pub(crate) segment_ends: Vec<bool>,
+    pub(crate) chapters: Vec<Chapter>,
+    pub(crate) images: Vec<SasayakiImage>,
 }
 
 static RE_CHARACTER: LazyLock<Regex> =
@@ -435,7 +435,7 @@ pub fn sasayaki_save_playback(app: AppHandle, id: String, mut playback: Sasayaki
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", all(target_os = "linux", feature = "transcription"))))]
 #[tauri::command]
 pub fn sasayaki_transcriber_status() -> &'static str {
     "unsupported"
