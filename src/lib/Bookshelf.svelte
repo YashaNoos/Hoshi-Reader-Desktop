@@ -6,6 +6,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { Menu, Submenu, type MenuOptions } from "@tauri-apps/api/menu";
+  import { showContextMenu } from "./contextMenu";
   import { ask, message } from "@tauri-apps/plugin-dialog";
   import {
     ArrowDown,
@@ -187,7 +188,7 @@
 
   async function popupMenu(items: MenuOptions["items"]) {
     const menu = await Menu.new({ items });
-    await menu.popup();
+    await showContextMenu(menu);
   }
 
   async function moveTo(ids: string[], name: string | null) {

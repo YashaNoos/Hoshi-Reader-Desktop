@@ -56,6 +56,8 @@ sherpa-onnx = { version = "1.13.8", optional = true }
 similar = { version = "2", optional = true }
 zbus-secret-service-keyring-store = { version = "1", features = ["rt-async-io-crypto-rust"] }
 arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"] }
+# Wayland: anchor context menus to our own window (see context_menu.rs)
+gtk = "0.18"
 symphonia = { version = "0.5", default-features = false, features = ["aac", "alac", "flac", "isomp4", "mkv", "mp3", "ogg", "pcm", "vorbis", "wav"] }
 
 [target.'cfg(windows)'.dependencies]
