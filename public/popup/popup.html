@@ -309,8 +309,46 @@
         window.customCSS = dict.customCSS;
       }
 
+      // WebKitGTK 2.54 (Linux) does not load @font-face, <img> or <script> URLs on another
+      // custom scheme inside this iframe (book:// or image:// from tauri://): the request
+      // never reaches the app. fetch() of the same URL still works, so on Linux fonts are
+      // fetched once and registered through the FontFace API (kept across lookups:
+      // applyPopupFonts runs on every lookup and the stroke-order font is 18 MB), and
+      // selection.js is fetched and inserted inline. Images: setHoshiImageSource in popup.js.
+      const linuxFetchSubresources = /Linux/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent);
+      const popupFontFaces = new Map();
+      function applyPopupFontFaces(fonts) {
+        const wanted = new Set(fonts.map((font) => font.url));
+        for (const [url, entry] of popupFontFaces) {
+          if (wanted.has(url)) continue;
+          if (entry.face) document.fonts.delete(entry.face);
+          popupFontFaces.delete(url);
+        }
+        for (const font of fonts) {
+          if (popupFontFaces.has(font.url)) continue;
+          const entry = { face: null };
+          popupFontFaces.set(font.url, entry);
+          fetch(font.url)
+            .then((response) => {
+              if (!response.ok) throw new Error(`HTTP ${response.status}`);
+              return response.arrayBuffer();
+            })
+            .then((data) => {
+              if (popupFontFaces.get(font.url) !== entry) return;
+              entry.face = new FontFace(font.name, data);
+              document.fonts.add(entry.face);
+              return entry.face.load();
+            })
+            .catch((error) => {
+              console.warn(`popup font ${font.name}: ${error}`);
+              if (popupFontFaces.get(font.url) === entry) popupFontFaces.delete(font.url);
+            });
+        }
+      }
+
       let popupFontStyle = null;
       function applyPopupFonts(fonts) {
+        if (linuxFetchSubresources) return applyPopupFontFaces(fonts);
         popupFontStyle?.remove();
         popupFontStyle = null;
         const rules = fonts
@@ -686,8 +724,24 @@
       announce();
 
       const selectionScript = document.createElement("script");
-      selectionScript.src = hoshiSchemeUrl("book", "__hoshi/selection.js");
-      document.head.appendChild(selectionScript);
+      const selectionUrl = hoshiSchemeUrl("book", "__hoshi/selection.js");
+      if (linuxFetchSubresources) {
+        fetch(selectionUrl)
+          .then((response) => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return response.text();
+          })
+          .then((code) => {
+            selectionScript.textContent = code;
+          })
+          .catch(() => {
+            selectionScript.src = selectionUrl;
+          })
+          .finally(() => document.head.appendChild(selectionScript));
+      } else {
+        selectionScript.src = selectionUrl;
+        document.head.appendChild(selectionScript);
+      }
     </script>
   </body>
 </html>
