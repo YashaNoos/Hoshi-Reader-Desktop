@@ -6,6 +6,7 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { FolderCog } from "@lucide/svelte";
   import { chromeOverride, chromeTheme } from "./lib/theme.svelte";
+  import { isLinux } from "./lib/platform";
   import Bookshelf from "./lib/Bookshelf.svelte";
   import DictionarySearch from "./lib/DictionarySearch.svelte";
   import Statistics from "./lib/Statistics.svelte";
@@ -98,10 +99,17 @@
     if (errors.length) await message(errors.join("\n"), { title: "Error", kind: "error" });
   }
 
+  // AppImage only: GTK no longer follows the desktop by itself there (see appimage_theme.rs),
+  // so "System" is passed on explicitly. null everywhere else.
+  let desktopScheme = $state<"light" | "dark" | null>(null);
+  if (isLinux) {
+    invoke<"light" | "dark" | null>("desktop_color_scheme").then((s) => (desktopScheme = s)).catch(() => {});
+  }
+
   $effect(() => {
     document.documentElement.dataset.theme = chromeTheme(!!current);
     const scheme = chromeOverride();
-    getCurrentWindow().setTheme(scheme);
+    getCurrentWindow().setTheme(scheme ?? desktopScheme);
     invoke("set_menu_theme", { dark: scheme && scheme === "dark" });
   });
 

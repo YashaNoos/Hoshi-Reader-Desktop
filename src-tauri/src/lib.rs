@@ -1,6 +1,8 @@
 pub type Fallible<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 mod anki;
+#[cfg(target_os = "linux")]
+mod appimage_theme;
 mod backup;
 mod book;
 mod clipboard;
@@ -40,6 +42,8 @@ use dict::LookupState;
 static EXITING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    appimage_theme::init();
     #[cfg(target_os = "macos")]
     writing_tools::disable();
     #[cfg(target_os = "macos")]
@@ -158,6 +162,8 @@ pub fn run() {
             transcriber::sasayaki_transcribe,
             #[cfg(target_os = "linux")]
             context_menu::popup_menu_at_pointer,
+            #[cfg(target_os = "linux")]
+            appimage_theme::desktop_color_scheme,
             #[cfg(windows)]
             media_controls::media_controls_metadata,
             #[cfg(windows)]
