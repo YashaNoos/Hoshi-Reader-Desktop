@@ -99,11 +99,17 @@
     if (errors.length) await message(errors.join("\n"), { title: "Error", kind: "error" });
   }
 
-  // AppImage only: GTK no longer follows the desktop by itself there (see appimage_theme.rs),
-  // so "System" is passed on explicitly. null everywhere else.
+  // Linux: "System" would otherwise always be light (see appimage_theme.rs), so the desktop's
+  // color scheme is passed on explicitly. Re-read when the window gets focus, so switching
+  // the desktop between light and dark is picked up. null when the desktop states none.
   let desktopScheme = $state<"light" | "dark" | null>(null);
   if (isLinux) {
-    invoke<"light" | "dark" | null>("desktop_color_scheme").then((s) => (desktopScheme = s)).catch(() => {});
+    const readDesktopScheme = () =>
+      invoke<"light" | "dark" | null>("desktop_color_scheme").then((s) => (desktopScheme = s)).catch(() => {});
+    readDesktopScheme();
+    getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      if (focused) readDesktopScheme();
+    });
   }
 
   $effect(() => {

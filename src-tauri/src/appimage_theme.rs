@@ -27,9 +27,65 @@ pub fn init() {
     unsafe { std::env::set_var("GTK_THEME", name) };
 }
 
-/// The desktop's color scheme as the AppImage hook saw it at launch, or `None` outside an
-/// AppImage (there GTK follows the desktop theme by itself).
-#[tauri::command]
+/// The desktop's color scheme, for the "System" theme setting.
+///
+/// Needed on every Linux build, not only the AppImage: for "System" the app calls
+/// `Window::set_theme(None)`, which tao turns into `gtk-application-prefer-dark-theme =
+/// false`, so WebKit reports light even on a dark desktop (KDE's Breeze is one theme with
+/// a dark variant selected by that setting). The frontend passes this value instead.
+///
+/// Read from the XDG desktop portal (`org.freedesktop.appearance color-scheme`, what KDE
+/// and GNOME set), falling back to what the AppImage hook saw at launch. `None` when the
+/// desktop states no preference; "System" then keeps the old behaviour.
+/// Async: busctl may take a moment and sync commands run on the GTK main thread.
+#[tauri::command(async)]
 pub fn desktop_color_scheme() -> Option<&'static str> {
-    DESKTOP_DARK.get().map(|dark| if *dark { "dark" } else { "light" })
+    let dark = portal_color_scheme().or_else(|| DESKTOP_DARK.get().copied())?;
+    Some(if dark { "dark" } else { "light" })
+}
+
+/// `Some(true)` = prefer dark, `Some(false)` = prefer light, `None` = no preference or no portal.
+fn portal_color_scheme() -> Option<bool> {
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    let mut child = Command::new("busctl")
+        .args([
+            "--user",
+            "call",
+            "org.freedesktop.portal.Desktop",
+            "/org/freedesktop/portal/desktop",
+            "org.freedesktop.portal.Settings",
+            "Read",
+            "ss",
+            "org.freedesktop.appearance",
+            "color-scheme",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    }
+    let output = child.wait_with_output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    // "v v u 1" (Read wraps the value in a second variant) or "v u 1"
+    let text = String::from_utf8_lossy(&output.stdout);
+    match text.split_whitespace().last()? {
+        "1" => Some(true),
+        "2" => Some(false),
+        _ => None,
+    }
 }
