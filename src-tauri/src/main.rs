@@ -1,6 +1,20 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    // Fullscreen reader on KDE Plasma (AMD RX 7900 XTX, 144 Hz monitor next to a 75 Hz one):
+    // with WebKitGTK's DMA-BUF renderer, KWin shows the page's GPU buffers directly on the
+    // monitor ("direct scanout"). Switching between that and normal compositing, e.g. when
+    // the pointer moves onto that monitor, made it lose and re-acquire the signal: black
+    // flashes, tearing, the monitor's "display on" box. Other apps were not affected.
+    // Frames are shared through shared memory instead, which a reader does not notice.
+    // WEBKIT_DISABLE_DMABUF_RENDERER=0 restores WebKit's default.
+    #[cfg(target_os = "linux")]
+    match std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER") {
+        // SAFETY (both): called first thing in main; no other thread exists yet.
+        None => unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") },
+        Some(value) if value == "0" => unsafe { std::env::remove_var("WEBKIT_DISABLE_DMABUF_RENDERER") },
+        Some(_) => {}
+    }
     // Route GTK's native file chooser through xdg-desktop-portal so the desktop's own
     // dialog is used (KDE's on Plasma). Only when a FileChooser portal answers: with
     // GTK_USE_PORTAL=1 and no portal, GTK shows no dialog at all.
