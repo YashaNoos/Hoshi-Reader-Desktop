@@ -1,5 +1,4 @@
-#[tauri::command]
-pub fn clipboard_text(since: Option<i64>) -> (i64, Option<String>) {
+fn read(since: Option<i64>) -> (i64, Option<String>) {
     let count = change_count();
     let text = if since.is_some_and(|since| since != count) {
         text()
@@ -7,6 +6,39 @@ pub fn clipboard_text(since: Option<i64>) -> (i64, Option<String>) {
         None
     };
     (count, text)
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tauri::command]
+pub fn clipboard_text(since: Option<i64>) -> (i64, Option<String>) {
+    read(since)
+}
+
+// Linux: reading the clipboard asks its owner to send the data. When the owner is
+// this app (text copied inside Hoshi, e.g. from a definition), GTK's main thread has
+// to answer that request, so the read must not run on the main thread, where
+// synchronous commands run: the app froze and aborted. Read on a blocking worker
+// instead; a read that does not finish in time only pauses the clipboard monitor.
+#[cfg(target_os = "linux")]
+#[tauri::command]
+pub async fn clipboard_text(since: Option<i64>) -> (i64, Option<String>) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::Duration;
+
+    static READING: AtomicBool = AtomicBool::new(false);
+    let unchanged = || (since.unwrap_or_else(|| LAST_COUNT.load(Ordering::Relaxed)), None);
+    if READING.swap(true, Ordering::AcqRel) {
+        return unchanged();
+    }
+    let task = tauri::async_runtime::spawn_blocking(move || {
+        let result = read(since);
+        READING.store(false, Ordering::Release);
+        result
+    });
+    match tokio::time::timeout(Duration::from_secs(2), task).await {
+        Ok(Ok(result)) => result,
+        _ => unchanged(),
+    }
 }
 
 #[cfg(target_os = "macos")]
