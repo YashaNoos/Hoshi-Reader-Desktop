@@ -3,6 +3,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { Menu } from "@tauri-apps/api/menu";
+  import { showContextMenu } from "./contextMenu";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { message, open, save } from "@tauri-apps/plugin-dialog";
   import {
@@ -1119,7 +1120,7 @@
         action: () => source.postMessage({ hoshi: "create-highlight", id: crypto.randomUUID().toUpperCase(), color }, "*"),
       })) },
     ] });
-    await menu.popup();
+    await showContextMenu(menu);
   }
 
   function removeHighlight(highlight: BookHighlight) {

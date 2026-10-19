@@ -5,6 +5,8 @@ mod anki;
 mod backup;
 mod book;
 mod clipboard;
+#[cfg(target_os = "linux")]
+mod context_menu;
 mod crash;
 mod css;
 mod dict;
@@ -147,6 +149,8 @@ pub fn run() {
             transcriber::sasayaki_clear_transcript,
             transcriber::sasayaki_pause_transcription,
             transcriber::sasayaki_transcribe,
+            #[cfg(target_os = "linux")]
+            context_menu::popup_menu_at_pointer,
             #[cfg(windows)]
             media_controls::media_controls_metadata,
             #[cfg(windows)]
