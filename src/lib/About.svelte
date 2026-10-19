@@ -3,9 +3,13 @@
   import { invoke } from "@tauri-apps/api/core";
   import { ExternalLink } from "@lucide/svelte";
   import { aboutLicenses } from "./aboutLicenses";
+  import { aboutLicensesLinux } from "./aboutLicensesLinux";
+  import { isLinux } from "./platform";
   import artwork from "../../src-tauri/icons/Hoshi.icon/Assets/Artwork.png";
   import SettingsSection from "./SettingsSection.svelte";
   import SettingRow from "./SettingRow.svelte";
+
+  const licenseSections = isLinux ? [...aboutLicenses, ...aboutLicensesLinux] : aboutLicenses;
 
   let version = $state("");
   getVersion().then((value) => (version = value));
@@ -45,7 +49,9 @@
       <p class="select-text text-sm text-base-content/60">Version {version}</p>
     </div>
     <SettingRow label="Updates">
-      {#if updateVersion}
+      {#if isLinux}
+        <span class="text-sm text-base-content/60">Through your package manager or the Linux releases page</span>
+      {:else if updateVersion}
         <button class="btn btn-primary btn-sm" disabled={update === "installing"} onclick={installUpdate}>{update === "installing" ? "Installing…" : `Install ${updateVersion}`}</button>
       {:else}
         <div class="flex items-center gap-3">
@@ -58,6 +64,11 @@
     <button class="flex items-center justify-between gap-4 text-left text-sm" onclick={() => openLink("https://github.com/Manhhao/Hoshi-Reader-Desktop")}>
       <span>GitHub</span><ExternalLink class="size-4 text-base-content/60" />
     </button>
+    {#if isLinux}
+      <button class="flex items-center justify-between gap-4 text-left text-sm" onclick={() => openLink("https://github.com/YashaNoos/Hoshi-Reader-for-Linux-unofficial-")}>
+        <span>GitHub (unofficial Linux build)</span><ExternalLink class="size-4 text-base-content/60" />
+      </button>
+    {/if}
   </div>
 </div>
 
@@ -68,7 +79,7 @@
     <span class="hidden text-xs font-normal text-base-content/60 group-open:inline">Hide</span>
   </summary>
   <div class="flex flex-col gap-6 px-6 pb-6">
-    {#each aboutLicenses as section (section.title)}
+    {#each licenseSections as section (section.title)}
       <SettingsSection title={section.title} compact>
         {#each section.entries as entry (entry.name)}
           {#if entry.text}
