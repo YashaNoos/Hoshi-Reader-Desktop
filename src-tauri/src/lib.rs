@@ -24,6 +24,8 @@ mod search;
 mod statistics;
 mod sync;
 mod transcriber;
+#[cfg(all(target_os = "linux", feature = "transcription"))]
+mod transcription;
 mod ttu_statistics;
 mod updater;
 mod wheel;

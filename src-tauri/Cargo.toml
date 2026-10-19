@@ -51,6 +51,8 @@ objc2 = "0.6"
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+# Sasayaki transcription (feature "transcription"): offline speech recognition
+sherpa-onnx = { version = "1.13.8", optional = true }
 zbus-secret-service-keyring-store = { version = "1", features = ["rt-async-io-crypto-rust"] }
 arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"] }
 symphonia = { version = "0.5", default-features = false, features = ["aac", "alac", "flac", "isomp4", "mkv", "mp3", "ogg", "pcm", "vorbis", "wav"] }
@@ -76,6 +78,11 @@ windows = { version = "0.61", features = [
 ] }
 windows-native-keyring-store = "1"
 libloading = "0.8"
+
+[features]
+default = ["transcription"]
+# Linux: on-device Sasayaki transcription (sherpa-onnx + ReazonSpeech). No effect on macOS/Windows.
+transcription = ["dep:sherpa-onnx"]
 
 [profile.dev.package."*"]
 opt-level = 2

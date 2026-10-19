@@ -38,7 +38,7 @@ pub struct SasayakiMatch {
     pub length: usize,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SasayakiToken {
     pub text: String,
     pub start: f64,
