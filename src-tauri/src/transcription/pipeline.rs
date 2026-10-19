@@ -12,6 +12,30 @@ const FRAME: usize = 512;
 const SPEECH_LEAD_SAMPLES: i64 = 16_000;
 const SPEECH_CONTINUATION_LEAD_SAMPLES: i64 = 8_000;
 const SPEECH_TAIL_SAMPLES: i64 = 4_000;
+/// A pause this far below the recording's loud frames (90th percentile) splits a
+/// segment when it lasts RELATIVE_PAUSE_SAMPLES: the model tends to transcribe only one
+/// side of a pause it is given inside a single piece.
+const RELATIVE_PAUSE_DB: i64 = 16;
+/// Frames this close to the loud level count as speech when looking for where speech
+/// resumes after a pause cut (breaths and room tone stay below it).
+const VOICED_DB: i64 = 12;
+const RELATIVE_PAUSE_SAMPLES: i64 = 8_000;
+/// The earlier piece keeps this much of the pause (the model needs a little audio after
+/// the last word); the next piece starts shortly before speech resumes.
+const RELATIVE_PAUSE_KEEP: i64 = 4_800;
+const PAUSE_ONSET_LEAD_SAMPLES: i64 = 4_800;
+/// Only pieces at least this long are split at a relative pause.
+const MIN_SPLIT_SAMPLES: i64 = 16_000;
+/// Consecutive speech-level frames (~0.1 s) that count as speech after a pause cut.
+const ONSET_FRAMES: u32 = 3;
+
+/// A frame's loudness relative to the recording's loud frames (90th percentile).
+#[derive(Clone, Copy, PartialEq)]
+enum Level {
+    Quiet,
+    Low,
+    Voiced,
+}
 
 /// Clean audiobook speech is separated from silence by energy. A bounded 30-second
 /// histogram follows the recording's noise floor.
@@ -29,7 +53,10 @@ impl EnergyVad {
         EnergyVad { history, histogram, cursor: 0 }
     }
 
-    fn probability(&mut self, samples: &[f32]) -> f32 {
+    /// Speech probability, and whether the frame is a pause relative to the voice:
+    /// far quieter than the recording's loud frames, even if above the noise floor
+    /// (breaths, room tone or a music bed between phrases).
+    fn probability(&mut self, samples: &[f32]) -> (f32, Level) {
         let energy: f64 = samples.iter().map(|&s| s as f64 * s as f64).sum();
         let db = if energy > 0.0 {
             (10.0 * (energy / samples.len() as f64).log10()).clamp(-100.0, 0.0)
@@ -52,7 +79,24 @@ impl EnergyVad {
             floor += 1;
         }
         let threshold = (floor as i64 - 100 + 12).clamp(-55, -30) as f64;
-        (1.0 / (1.0 + (-(db - threshold) / 2.0).exp())) as f32
+        let mut loud = self.histogram.len() - 1;
+        let mut above = 0;
+        while loud > 0 {
+            above += self.histogram[loud];
+            if above > self.history.len() / 10 {
+                break;
+            }
+            loud -= 1;
+        }
+        let loud = (loud as i64 - 100) as f64;
+        let level = if db < loud - RELATIVE_PAUSE_DB as f64 {
+            Level::Quiet
+        } else if db >= loud - VOICED_DB as f64 {
+            Level::Voiced
+        } else {
+            Level::Low
+        };
+        ((1.0 / (1.0 + (-(db - threshold) / 2.0).exp())) as f32, level)
     }
 }
 
@@ -61,14 +105,29 @@ struct SpeechBounds {
     start: i64,
     end: i64,
     hard_cut: bool,
+    /// Split at a relative pause: the pieces on both sides get no context across the cut,
+    /// so neither hears (and transcribes) the other's words.
+    ends_at_pause: bool,
+    starts_at_pause: bool,
+    /// First frame at speech level (not quiet relative to the voice), if any.
+    onset: Option<i64>,
 }
 
 impl SpeechBounds {
     fn padded_start(&self) -> i64 {
-        (self.start - SPEECH_LEAD_SAMPLES).max(0)
+        if self.starts_at_pause {
+            // Skip the quiet lead-in (a breath can come out as a filler word).
+            self.onset.map_or(self.start, |onset| (onset - PAUSE_ONSET_LEAD_SAMPLES).max(self.start))
+        } else {
+            (self.start - SPEECH_LEAD_SAMPLES).max(0)
+        }
+    }
+    /// Nothing at speech level after a pause cut: only the rest of the pause.
+    fn pause_only(&self) -> bool {
+        self.starts_at_pause && self.onset.is_none()
     }
     fn padded_end(&self) -> i64 {
-        self.end + SPEECH_TAIL_SAMPLES
+        if self.ends_at_pause { self.end } else { self.end + SPEECH_TAIL_SAMPLES }
     }
 }
 
@@ -79,7 +138,12 @@ struct SpeechSegmenter {
     candidate_start: Option<i64>,
     speech: bool,
     silence_start: Option<i64>,
+    quiet_start: Option<i64>,
     continuation: bool,
+    after_pause: bool,
+    onset: Option<i64>,
+    loud_run: u32,
+    loud_run_start: i64,
 }
 
 impl SpeechSegmenter {
@@ -87,11 +151,15 @@ impl SpeechSegmenter {
         (self.candidate_start.unwrap_or(self.position) - SPEECH_LEAD_SAMPLES).max(0)
     }
 
-    fn accept(&mut self, probability: f32, count: usize) -> Option<SpeechBounds> {
+    fn accept(&mut self, probability: f32, level: Level, count: usize) -> Option<SpeechBounds> {
+        let quiet = level == Level::Quiet;
         let frame_start = self.position;
         self.position += count as i64;
         if !self.speech {
             if probability >= 0.5 {
+                if self.candidate_start.is_none() {
+                    self.onset = None;
+                }
                 self.candidate_start.get_or_insert(frame_start);
                 self.speech = true;
             } else {
@@ -101,12 +169,42 @@ impl SpeechSegmenter {
         if !self.speech {
             return None;
         }
+        if level == Level::Voiced && probability >= 0.35 {
+            if self.loud_run == 0 {
+                self.loud_run_start = frame_start;
+            }
+            self.loud_run += 1;
+            if self.loud_run >= ONSET_FRAMES {
+                self.onset.get_or_insert(self.loud_run_start);
+            }
+        } else {
+            self.loud_run = 0;
+        }
+        if quiet && probability >= 0.35 {
+            let pause = *self.quiet_start.get_or_insert(frame_start);
+            let candidate = self.candidate_start.unwrap();
+            if self.position - pause >= RELATIVE_PAUSE_SAMPLES && pause - candidate >= MIN_SPLIT_SAMPLES {
+                let cut = pause + RELATIVE_PAUSE_KEEP;
+                let starts_at_pause = std::mem::replace(&mut self.after_pause, true);
+                let onset = self.onset.take();
+                self.quiet_start = None;
+                self.silence_start = None;
+                self.continuation = true;
+                self.candidate_start = Some(cut);
+                return Some(SpeechBounds { start: candidate, end: cut, hard_cut: true, ends_at_pause: true, starts_at_pause, onset });
+            }
+        } else if !quiet {
+            self.quiet_start = None;
+        }
         if probability < 0.35 {
             let silence = *self.silence_start.get_or_insert(frame_start);
             if self.position - silence >= 8_000 {
                 let result = self.bounds(silence);
+                self.after_pause = false;
+                self.onset = None;
                 self.candidate_start = None;
                 self.silence_start = None;
+                self.quiet_start = None;
                 self.speech = false;
                 self.continuation = false;
                 return result;
@@ -117,7 +215,9 @@ impl SpeechSegmenter {
         let candidate = self.candidate_start.unwrap();
         if self.position - candidate >= 320_000 {
             let end = self.silence_start.unwrap_or(self.position);
-            let result = SpeechBounds { start: candidate, end, hard_cut: self.silence_start.is_none() };
+            let starts_at_pause = std::mem::take(&mut self.after_pause);
+            let onset = self.onset.take();
+            let result = SpeechBounds { start: candidate, end, hard_cut: self.silence_start.is_none(), ends_at_pause: false, starts_at_pause, onset };
             self.speech = self.silence_start.is_none();
             self.continuation = self.speech;
             self.candidate_start = self.speech.then_some(self.position);
@@ -129,6 +229,8 @@ impl SpeechSegmenter {
 
     fn finish(&mut self) -> Option<SpeechBounds> {
         let result = if self.speech { self.bounds(self.silence_start.unwrap_or(self.position)) } else { None };
+        self.after_pause = false;
+        self.onset = None;
         self.candidate_start = None;
         self.silence_start = None;
         self.speech = false;
@@ -140,7 +242,7 @@ impl SpeechSegmenter {
         let start = self.candidate_start?;
         // Even an immediate silence after a hard cut owns its trailing context.
         (end >= start && (self.continuation || end - start >= 4_000))
-            .then_some(SpeechBounds { start, end, hard_cut: false })
+            .then_some(SpeechBounds { start, end, hard_cut: false, ends_at_pause: false, starts_at_pause: self.after_pause, onset: self.onset })
     }
 }
 
@@ -275,8 +377,8 @@ impl Pipeline {
 
     fn process_frame(&mut self, count: usize, schedule: &mut impl FnMut(Job)) {
         self.history.append(&self.frame[..count]);
-        let probability = self.vad.probability(&self.frame);
-        if let Some(bounds) = self.segmenter.accept(probability, count) {
+        let (probability, level) = self.vad.probability(&self.frame);
+        if let Some(bounds) = self.segmenter.accept(probability, level, count) {
             self.pending.push_back(bounds);
         }
         self.frame_size = 0;
@@ -301,14 +403,19 @@ impl Pipeline {
             let scheduled_sample = (self.scheduled_through * rate - 1e-8).ceil() as i64 - self.origin_sample;
             // Trim leading context only before new speech; hard cuts and resumes keep
             // half a second of context, and the stitcher removes repeated text.
-            let start = if bounds.start > scheduled_sample {
+            let start = if bounds.start > scheduled_sample || bounds.starts_at_pause {
                 bounds.padded_start().max(scheduled_sample)
             } else {
                 (bounds.start - SPEECH_CONTINUATION_LEAD_SAMPLES).max(0)
             };
-            let samples = self.history.read(start, end);
             let owned_end = if bounds.hard_cut { bounds.end } else { end };
             let through = self.duration.min((self.origin_sample + owned_end) as f64 / rate);
+            if bounds.pause_only() {
+                self.emit(through, schedule);
+                self.pending.pop_front();
+                continue;
+            }
+            let samples = self.history.read(start, end);
             if through > self.scheduled_through {
                 schedule(Job::Recognize(Recognition {
                     samples,
