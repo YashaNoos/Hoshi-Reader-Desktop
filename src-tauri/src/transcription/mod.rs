@@ -1,5 +1,5 @@
-// On-device Sasayaki transcription for Linux: sherpa-onnx + ReazonSpeech k2 v2,
-// following the pipeline of Hoshi Reader Android. Used by transcriber/linux.rs; the
+// On-device Sasayaki transcription for Linux: sherpa-onnx + parakeet-tdt_ctc-0.6b-ja or
+// ReazonSpeech k2 v2, following the pipeline of Hoshi Reader Android. Used by transcriber/linux.rs; the
 // transcript is aligned to the book by the shared aligner (aligner.rs).
 
 pub mod audio;
@@ -13,7 +13,8 @@ use std::sync::{Arc, Mutex, mpsc};
 use sherpa_onnx::{OfflineModelConfig, OfflineRecognizer, OfflineRecognizerConfig, OfflineTransducerModelConfig};
 
 pub use crate::sasayaki::SasayakiToken as Token;
-use pipeline::{Batch, OrderedScheduler, Pipeline, Recognition, Stitcher, project_tokens};
+use model::Model;
+use pipeline::{Batch, Cutting, OrderedScheduler, Pipeline, Recognition, Stitcher, project_tokens};
 
 /// Concurrent recognitions and ONNX threads per recognition, from the CPU count.
 fn parallelism() -> (usize, i32) {
@@ -23,7 +24,7 @@ fn parallelism() -> (usize, i32) {
     (workers, threads)
 }
 
-fn recognizer(paths: &model::ModelPaths, threads: i32) -> Result<OfflineRecognizer, String> {
+fn recognizer(model: Model, paths: &model::ModelPaths, threads: i32) -> Result<OfflineRecognizer, String> {
     let path = |p: &Path| Some(p.to_string_lossy().into_owned());
     let mut config = OfflineRecognizerConfig::default();
     config.model_config = OfflineModelConfig {
@@ -35,7 +36,7 @@ fn recognizer(paths: &model::ModelPaths, threads: i32) -> Result<OfflineRecogniz
         tokens: path(&paths.tokens),
         num_threads: threads,
         provider: Some("cpu".into()),
-        model_type: Some("transducer".into()),
+        model_type: Some(model.model_type().into()),
         ..Default::default()
     };
     config.decoding_method = Some("greedy_search".into());
@@ -58,9 +59,12 @@ fn recognize(recognizer: &OfflineRecognizer, job: &Recognition) -> Result<Batch,
     })
 }
 
-/// Transcribes `path` from `from` seconds. Blocking; returns Ok(()) when cancelled.
+/// Transcribes `path` from `from` seconds with `model`, whose files are (or are downloaded)
+/// in `model_dir`. Blocking; returns Ok(()) when cancelled.
 /// `previous` is the already saved transcript tail, used to drop repeated words on resume.
+#[allow(clippy::too_many_arguments)]
 pub fn transcribe(
+    model: Model,
     model_dir: &Path,
     path: &Path,
     from: f64,
@@ -74,11 +78,11 @@ pub fn transcribe(
         on_tokens(Vec::new(), duration);
         return Ok(());
     }
-    let Some(paths) = tauri::async_runtime::block_on(model::ensure(model_dir, cancel, on_download))? else {
+    let Some(paths) = tauri::async_runtime::block_on(model::ensure(model, model_dir, cancel, on_download))? else {
         return Ok(());
     };
     let (workers, threads) = parallelism();
-    let recognizer = Arc::new(recognizer(&paths, threads)?);
+    let recognizer = Arc::new(recognizer(model, &paths, threads)?);
 
     type Work = (Recognition, mpsc::SyncSender<Result<Batch, String>>);
     let (jobs, queue) = mpsc::channel::<Work>();
@@ -96,7 +100,11 @@ pub fn transcribe(
 
     // Half a second of leading context; the stitcher drops what was already saved.
     let audio_from = (from - 0.5).max(0.0);
-    let mut pipeline = Pipeline::new(from, duration, audio_from);
+    let cutting = match model {
+        Model::Parakeet => Cutting::PARAKEET,
+        Model::ReazonSpeech => Cutting::REAZONSPEECH,
+    };
+    let mut pipeline = Pipeline::new(from, duration, audio_from, cutting);
     let mut scheduler = OrderedScheduler::new(jobs, workers + 1, Stitcher::new(from, previous), from, on_tokens);
     let stop = AtomicBool::new(false);
     let decoded = audio::decode(path, audio_from, &stop, |chunk| {

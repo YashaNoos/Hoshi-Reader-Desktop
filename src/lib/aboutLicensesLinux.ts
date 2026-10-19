@@ -17,7 +17,13 @@ export const aboutLicensesLinux = [
         "text": null
       },
       {
-        "name": "ReazonSpeech k2 v2 (speech model, downloaded on first use)",
+        "name": "NVIDIA parakeet-tdt_ctc-0.6b-ja (speech model, converted to sherpa-onnx and quantized to int8; downloaded on first use)",
+        "license": "CC-BY-4.0",
+        "url": "https://huggingface.co/nvidia/parakeet-tdt_ctc-0.6b-ja",
+        "text": null
+      },
+      {
+        "name": "ReazonSpeech k2 v2 (speech model, downloaded on first use when chosen)",
         "license": "Apache-2.0",
         "url": "https://huggingface.co/reazon-research/reazonspeech-k2-v2",
         "text": null

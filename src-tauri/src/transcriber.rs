@@ -27,12 +27,23 @@ struct SasayakiTranscript {
     through: f64,
     duration: f64,
     tokens: Vec<SasayakiToken>,
+    /// Linux build: the speech model that made it ("parakeet", "reazonspeech").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    model: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct TranscriptProgress {
     through: f64,
     duration: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    model: Option<String>,
+}
+
+/// Linux build: a transcript saved without a model was made by ReazonSpeech, the only
+/// model of earlier builds. Elsewhere no model is sent or saved.
+fn same_model(saved: Option<&str>, requested: Option<&str>) -> bool {
+    saved.or(requested.map(|_| "reazonspeech")) == requested
 }
 
 impl SasayakiTranscript {
@@ -105,8 +116,10 @@ pub async fn sasayaki_transcribe(
     path: String,
     performance: i32,
     merge_short_cues: Option<usize>,
+    model: Option<String>,
     on_progress: Channel<Progress>,
 ) -> Result<(), String> {
+    let model = cfg!(target_os = "linux").then(|| model.unwrap_or_else(|| "parakeet".into()));
     let cancel = CancellationToken::new();
     {
         let mut running = RUNNING.lock().unwrap();
@@ -128,11 +141,14 @@ pub async fn sasayaki_transcribe(
     let transcript_path = root.join(TRANSCRIPT_FILE);
     let mut transcript = library::read_json::<SasayakiTranscript>(&transcript_path)
         .filter(|saved| saved.duration == duration)
+        .filter(|saved| same_model(saved.model.as_deref(), model.as_deref()))
         .unwrap_or(SasayakiTranscript {
             through: 0.0,
             duration,
             tokens: Vec::new(),
+            model: None,
         });
+    transcript.model = model.clone();
 
     progress(Progress::Transcribing {
         through: transcript.through,
@@ -141,7 +157,9 @@ pub async fn sasayaki_transcribe(
     });
     // Linux: the saved tail lets the resumed transcription drop words it hears again.
     #[cfg(target_os = "linux")]
-    let audio = audio.resuming_after(&transcript.tokens, transcript.through);
+    let audio = audio
+        .resuming_after(&transcript.tokens, transcript.through)
+        .with_model(model.as_deref().unwrap_or_default());
     if !transcript.is_complete() {
         let (sender, mut events) = mpsc::unbounded_channel();
         backend::start(&app, audio, transcript.through, performance, sender, cancel)?;
@@ -201,4 +219,17 @@ pub async fn sasayaki_transcribe(
     crate::sync::storage::shared()
         .save_sasayaki_match(&result, &folder, &root)
         .map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn transcripts_without_a_model_are_reazonspeech() {
+        use super::same_model;
+        assert!(same_model(None, Some("reazonspeech")));
+        assert!(!same_model(None, Some("parakeet")));
+        assert!(same_model(Some("parakeet"), Some("parakeet")));
+        assert!(!same_model(Some("parakeet"), Some("reazonspeech")));
+        assert!(same_model(None, None));
+    }
 }
