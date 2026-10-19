@@ -104,6 +104,7 @@ pub async fn sasayaki_transcribe(
     id: String,
     path: String,
     performance: i32,
+    merge_short_cues: Option<usize>,
     on_progress: Channel<Progress>,
 ) -> Result<(), String> {
     let cancel = CancellationToken::new();
@@ -190,7 +191,9 @@ pub async fn sasayaki_transcribe(
     progress(Progress::Aligning);
     let book = app.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
-        sasayaki::build_source(&book, &id).map(|source| aligner::align(&source, &transcript.tokens))
+        sasayaki::build_source(&book, &id).map(|source| {
+            aligner::align(&source, &transcript.tokens, merge_short_cues.unwrap_or(1))
+        })
     })
     .await
     .unwrap()?;
