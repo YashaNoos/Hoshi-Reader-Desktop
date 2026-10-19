@@ -96,34 +96,64 @@ const hoshiLookupOverlay = {
         if (!this.layer) return;
         this.layer.replaceChildren();
         if (!this.range) return;
-        for (const rect of this.rects(this.range)) {
+        // whole pixels; boxes of one line that touch or overlap are merged into one, so
+        // there is no darker seam where two text nodes (e.g. a ruby word and the next
+        // character) meet
+        const boxes = [];
+        for (const { rect, shift } of this.rects(this.range)) {
             if (rect.width < 1 || rect.height < 1) continue;
+            const b = { left: Math.round(rect.left), right: Math.round(rect.right),
+                        top: Math.round(rect.top + shift), bottom: Math.round(rect.bottom + shift) };
+            const same = boxes.find((o) =>
+                (Math.abs(o.left - b.left) <= 1 && Math.abs(o.right - b.right) <= 1 &&
+                    b.top <= o.bottom + 1 && b.bottom >= o.top - 1) ||
+                (Math.abs(o.top - b.top) <= 1 && Math.abs(o.bottom - b.bottom) <= 1 &&
+                    b.left <= o.right + 1 && b.right >= o.left - 1));
+            if (same) {
+                same.left = Math.min(same.left, b.left); same.right = Math.max(same.right, b.right);
+                same.top = Math.min(same.top, b.top); same.bottom = Math.max(same.bottom, b.bottom);
+            } else {
+                boxes.push(b);
+            }
+        }
+        for (const b of boxes) {
             const box = document.createElement('div');
-            box.style.left = `${rect.left}px`;
-            box.style.top = `${rect.top}px`;
-            box.style.width = `${rect.width}px`;
-            box.style.height = `${rect.height}px`;
+            box.style.left = `${b.left}px`;
+            box.style.top = `${b.top}px`;
+            box.style.width = `${b.right - b.left}px`;
+            box.style.height = `${b.bottom - b.top}px`;
             this.layer.appendChild(box);
         }
     },
     // Rects of the range's text, without furigana: <rt>/<rp> are not selectable, so the
     // native highlight skips them and so does this one.
+    // In vertical text WebKitGTK draws the glyphs about 0.13em below their layout boxes
+    // (measured with several fonts), so every highlight looks shifted up; the boxes are
+    // moved down by that amount to sit on the glyphs.
     rects(range) {
+        const parts = [];
+        const add = (node, part) => {
+            const el = node.parentElement;
+            if (!el || el.closest('rt, rp')) return;
+            const style = getComputedStyle(el);
+            const shift = style.writingMode.startsWith('vertical') ? 0.13 * parseFloat(style.fontSize) : 0;
+            for (const rect of part.getClientRects()) parts.push({ rect, shift });
+        };
         const root = range.commonAncestorContainer;
         if (root.nodeType === Node.TEXT_NODE) {
-            return root.parentElement?.closest('rt, rp') ? [] : Array.from(range.getClientRects());
+            add(root, range);
+            return parts;
         }
-        const rects = [];
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
         for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-            if (!range.intersectsNode(node) || node.parentElement?.closest('rt, rp')) continue;
+            if (!range.intersectsNode(node)) continue;
             const part = document.createRange();
             part.selectNodeContents(node);
             if (node === range.startContainer) part.setStart(node, range.startOffset);
             if (node === range.endContainer) part.setEnd(node, range.endOffset);
-            rects.push(...part.getClientRects());
+            add(node, part);
         }
-        return rects;
+        return parts;
     },
     hide() {
         this.range = null;
