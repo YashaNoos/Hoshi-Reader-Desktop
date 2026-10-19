@@ -1,4 +1,4 @@
-// On-device Sasayaki transcription for Linux: sherpa-onnx + ReazonSpeech k2 v2,
+// On-device Sasayaki transcription for Linux: sherpa-onnx + parakeet-tdt_ctc-0.6b-ja,
 // following the pipeline of Hoshi Reader Android. Used by transcriber/linux.rs; the
 // transcript is aligned to the book by the shared aligner (aligner.rs).
 
@@ -35,7 +35,7 @@ fn recognizer(paths: &model::ModelPaths, threads: i32) -> Result<OfflineRecogniz
         tokens: path(&paths.tokens),
         num_threads: threads,
         provider: Some("cpu".into()),
-        model_type: Some("transducer".into()),
+        model_type: Some("nemo_transducer".into()),
         ..Default::default()
     };
     config.decoding_method = Some("greedy_search".into());

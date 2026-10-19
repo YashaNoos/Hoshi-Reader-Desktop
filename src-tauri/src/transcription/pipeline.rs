@@ -309,7 +309,18 @@ pub fn project_tokens(texts: &[String], timestamps: &[f32], segment_start: f64, 
         {
             continue;
         }
-        tokens.push(Token { text, start, end: next.max(start).min(segment_end) });
+        // Sentence pieces can hold several characters (っている): one token per character,
+        // spread over the piece's interval. Spaces and punctuation are dropped.
+        let end = next.max(start).min(segment_end);
+        let characters: Vec<char> = text.chars().filter(|c| c.is_alphanumeric()).collect();
+        let step = (end - start) / characters.len().max(1) as f64;
+        for (position, character) in characters.iter().enumerate() {
+            tokens.push(Token {
+                text: character.to_string(),
+                start: start + step * position as f64,
+                end: start + step * (position + 1) as f64,
+            });
+        }
     }
     tokens
 }

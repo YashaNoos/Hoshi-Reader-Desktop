@@ -1,5 +1,5 @@
-//! Linux transcription backend: sherpa-onnx with the ReazonSpeech model (see
-//! `crate::transcription`). The model (~160 MB) is downloaded on first use into the app's
+//! Linux transcription backend: sherpa-onnx with NVIDIA's parakeet-tdt_ctc-0.6b-ja model
+//! (see `crate::transcription`). The model (~630 MB) is downloaded on first use into the app's
 //! cache directory and checked with SHA-256; after that everything runs offline.
 //!
 //! Built without the `transcription` feature, transcription reports "unsupported".
@@ -58,8 +58,11 @@ pub fn start(
         .path()
         .app_cache_dir()
         .unwrap_or_else(|_| std::env::temp_dir())
-        .join("Models")
-        .join("reazonspeech-k2-v2-int8");
+        .join("Models");
+    for old in crate::transcription::model::OLD_MODELS {
+        std::fs::remove_dir_all(model_dir.join(old)).ok();
+    }
+    let model_dir = model_dir.join(crate::transcription::model::MODEL_NAME);
     let stop = Arc::new(AtomicBool::new(false));
     let flag = stop.clone();
     tauri::async_runtime::spawn(async move {

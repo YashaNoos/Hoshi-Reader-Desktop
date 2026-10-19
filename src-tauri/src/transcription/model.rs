@@ -1,5 +1,6 @@
-// ReazonSpeech k2 v2 (Apache-2.0) model files: the same pinned revision and checksums
-// as Hoshi Reader Android, downloaded on first use and verified with SHA-256.
+// NVIDIA parakeet-tdt_ctc-0.6b-ja (CC-BY-4.0), TDT branch exported to sherpa-onnx and
+// quantized to int8 (see the model release's README). Downloaded on first use from this
+// project's GitHub release and verified with SHA-256.
 
 use std::fs;
 use std::io::Write;
@@ -8,7 +9,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use sha2::{Digest, Sha256};
 
-const BASE: &str = "https://huggingface.co/reazon-research/reazonspeech-k2-v2/resolve/291488c8151be24d7da4bf7af26e533fad96e407/";
+const BASE: &str = "https://github.com/YashaNoos/Hoshi-Reader-for-Linux-unofficial-/releases/download/model-parakeet-ja-1/";
+
+/// Directory name under the cache's Models folder; also used to remove older models.
+pub const MODEL_NAME: &str = "parakeet-tdt_ctc-0.6b-ja-int8";
+/// Models of earlier builds, removed once this one is in place.
+pub const OLD_MODELS: [&str; 1] = ["reazonspeech-k2-v2-int8"];
 
 pub struct ModelFile {
     pub name: &'static str,
@@ -18,14 +24,14 @@ pub struct ModelFile {
 }
 
 pub const FILES: [ModelFile; 4] = [
-    ModelFile { name: "encoder.int8.onnx", remote: "encoder-epoch-99-avg-1.int8.onnx", bytes: 154_670_139,
-        sha256: "2c7bd08a8a99f9ddd0d9e458456577b1f6279214e51426f114f9eced44c54e1d" },
-    ModelFile { name: "decoder.int8.onnx", remote: "decoder-epoch-99-avg-1.int8.onnx", bytes: 2_959_337,
-        sha256: "8f0bff94d38797b03b762634ed03211a8e303d06cc4603cdd0cf4199d6eb1485" },
-    ModelFile { name: "joiner.int8.onnx", remote: "joiner-epoch-99-avg-1.int8.onnx", bytes: 2_696_970,
-        sha256: "49cc7ea1d3d35a40a27442db5e89996da64bf0e683a903dce76e99e57a12e4de" },
-    ModelFile { name: "tokens.txt", remote: "tokens.txt", bytes: 45_754,
-        sha256: "2c3ac659818a48a0c04010e0593bbc4d7c8a24a054340b01131499c05fd52def" },
+    ModelFile { name: "encoder.int8.onnx", remote: "encoder.int8.onnx", bytes: ENCODER_BYTES,
+        sha256: "2780b59886febf5b00bfb411a7ed9e6ef569b871739fcc58e7c7b42398f38277" },
+    ModelFile { name: "decoder.int8.onnx", remote: "decoder.int8.onnx", bytes: DECODER_BYTES,
+        sha256: "396758f94454d0f2491a1414747d4670b33c543d50efd1565bd28657b387a308" },
+    ModelFile { name: "joiner.int8.onnx", remote: "joiner.int8.onnx", bytes: JOINER_BYTES,
+        sha256: "d2e2f86466d3d1bdee245c791131a403f6061cb3e588b60dea23648878b8e0af" },
+    ModelFile { name: "tokens.txt", remote: "tokens.txt", bytes: TOKENS_BYTES,
+        sha256: "732f64c53909f2620c713f4106b487d92e6f54a6915b3cd3d1dbd32f9f4f392a" },
 ];
 
 const VERIFIED_MARKER: &str = ".verified";
