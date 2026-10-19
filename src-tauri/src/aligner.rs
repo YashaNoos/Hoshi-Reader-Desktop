@@ -203,7 +203,8 @@ fn assign(
 ) {
     let spoken = &speech.characters[anchor.speech..next.speech];
     let written = &book[anchor.book..next.book];
-    let (removed, inserted) = difference(spoken, written);
+    let (mut removed, mut inserted) = difference(spoken, written);
+    drop_unlikely_matches(spoken, &mut removed, &mut inserted);
 
     let mut offset = 0;
     for (index, &removed) in removed.iter().enumerate() {
@@ -226,6 +227,65 @@ fn assign(
             offset += 1;
         }
     }
+}
+
+/// A lone matching kana between differences is often chance: the transcript writes
+/// あした where the book has 明日, and its あ lands on the book's next あ (「あ、明日？」),
+/// stealing that cue's start. Keep such a match only when the differences on both sides
+/// could be the same words, as each written character needs at least one spoken one;
+/// otherwise treat it as a difference too. (Linux build, 0020.)
+fn drop_unlikely_matches(spoken: &[char], removed: &mut [bool], inserted: &mut [bool]) {
+    #[derive(Clone, Copy, PartialEq)]
+    enum Step {
+        Same(usize, usize),
+        Spoken,
+        Written,
+    }
+    let mut steps = Vec::new();
+    let (mut x, mut y) = (0, 0);
+    while x < removed.len() || y < inserted.len() {
+        if x < removed.len() && removed[x] {
+            steps.push(Step::Spoken);
+            x += 1;
+        } else if y < inserted.len() && inserted[y] {
+            steps.push(Step::Written);
+            y += 1;
+        } else {
+            steps.push(Step::Same(x, y));
+            x += 1;
+            y += 1;
+        }
+    }
+    let same = |step: &Step| matches!(step, Step::Same(..));
+    let edits = |range: &[Step]| {
+        let spoken = range.iter().filter(|&&step| step == Step::Spoken).count();
+        let written = range.iter().filter(|&&step| step == Step::Written).count();
+        (spoken, written)
+    };
+    for index in 0..steps.len() {
+        let Step::Same(x, y) = steps[index] else {
+            continue;
+        };
+        let before_start = steps[..index].iter().rposition(same).map_or(0, |p| p + 1);
+        let after_start = index + 1;
+        let after_end = steps[after_start..]
+            .iter()
+            .position(same)
+            .map_or(steps.len(), |p| after_start + p);
+        if before_start == index || after_start == after_end || !is_kana(spoken[x]) {
+            continue;
+        }
+        let (spoken_before, written_before) = edits(&steps[before_start..index]);
+        let (spoken_after, written_after) = edits(&steps[after_start..after_end]);
+        if spoken_before < written_before || spoken_after < written_after {
+            removed[x] = true;
+            inserted[y] = true;
+        }
+    }
+}
+
+fn is_kana(character: char) -> bool {
+    ('\u{3041}'..='\u{309F}').contains(&character) || ('\u{30A0}'..='\u{30FF}').contains(&character)
 }
 
 fn difference(old: &[char], new: &[char]) -> (Vec<bool>, Vec<bool>) {
