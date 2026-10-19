@@ -66,7 +66,10 @@ struct Span {
     upper: usize,
 }
 
-pub fn align(source: &Source, tokens: &[SasayakiToken]) -> SasayakiMatchData {
+/// `merge_short`: comma-separated pieces of this many characters or fewer are not cut
+/// into their own cue (a short opening like だが、 joins the text after it, a short
+/// ending like 、きっと。 the text before it). 1 (or 0) keeps upstream's cutting.
+pub fn align(source: &Source, tokens: &[SasayakiToken], merge_short: usize) -> SasayakiMatchData {
     let book: Vec<char> = source
         .text
         .iter()
@@ -95,7 +98,7 @@ pub fn align(source: &Source, tokens: &[SasayakiToken]) -> SasayakiMatchData {
         }
     }
 
-    cut(source, &times)
+    cut(source, &times, merge_short)
 }
 
 fn normalize(character: char) -> char {
@@ -291,13 +294,13 @@ fn difference(old: &[char], new: &[char]) -> (Vec<bool>, Vec<bool>) {
     (removed, inserted)
 }
 
-fn cut(source: &Source, times: &[Option<Timing>]) -> SasayakiMatchData {
+fn cut(source: &Source, times: &[Option<Timing>], merge_short: usize) -> SasayakiMatchData {
     let mut matches: Vec<SasayakiMatch> = Vec::new();
     let mut unmatched = 0;
     for chapter in &source.chapters {
         let mut start = chapter.start;
         for index in chapter.start..chapter.end() {
-            if !is_boundary(source, chapter, start, index) {
+            if !is_boundary(source, chapter, start, index, merge_short) {
                 continue;
             }
 
@@ -335,15 +338,40 @@ fn cut(source: &Source, times: &[Option<Timing>]) -> SasayakiMatchData {
     }
 }
 
-fn is_boundary(source: &Source, chapter: &Chapter, start: usize, index: usize) -> bool {
+fn is_boundary(
+    source: &Source,
+    chapter: &Chapter,
+    start: usize,
+    index: usize,
+    merge_short: usize,
+) -> bool {
     if source.sentence_ends[index] || index == chapter.end() - 1 {
         return true;
     }
 
+    // Upstream already keeps 1-character pieces together; 0 and 1 behave the same.
+    let merge_short = merge_short.max(1);
     source.segment_ends[index]
-        && index > start
+        && index - start >= merge_short
         && index + 2 < chapter.end()
-        && !source.sentence_ends[index + 1]
+        && !short_sentence_tail(source, chapter, index, merge_short)
+}
+
+/// True when the piece after the comma at `index` is the last one of its sentence and
+/// has `merge_short` characters or fewer: it stays with the cue before it.
+fn short_sentence_tail(source: &Source, chapter: &Chapter, index: usize, merge_short: usize) -> bool {
+    for next in index + 1..chapter.end() {
+        if next - index > merge_short {
+            return false;
+        }
+        if source.sentence_ends[next] || next == chapter.end() - 1 {
+            return true;
+        }
+        if source.segment_ends[next] {
+            return false;
+        }
+    }
+    false
 }
 
 fn time(

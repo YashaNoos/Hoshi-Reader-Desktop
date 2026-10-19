@@ -67,6 +67,14 @@
     else subtitleFile = result;
   }
 
+  // Linux build (0018): 1 = upstream's cutting (it never makes a 1-character piece a cue).
+  const MAX_MERGE_SHORT_CUES = 6;
+  const mergeShortCues = $derived(Math.min(MAX_MERGE_SHORT_CUES, Math.max(1, sasayakiConfig.sasayakiMergeShortCues)));
+  function setMergeShortCues(value: number) {
+    sasayakiConfig.sasayakiMergeShortCues = value;
+    saveSasayakiConfig();
+  }
+
   async function start() {
     isMatching = true;
     matchError = "";
@@ -77,6 +85,7 @@
           id: bookId,
           path: file,
           performance: sasayakiConfig.sasayakiTranscriptionPerformance,
+          mergeShortCues,
           onProgress,
         });
       else await invoke("sasayaki_match", { id: bookId, path: file });
@@ -179,6 +188,36 @@
                 {label}
               </button>
             {/each}
+          </div>
+        </div>
+      {/if}
+
+      {#if useAudio}
+        <div
+          class="flex items-center justify-between gap-3"
+          title="Comma-separated pieces this short (だが、, 、きっと。) are joined to the text next to them instead of becoming their own cue. 1 is the default and cuts like the other platforms. Applies the next time you press Match."
+        >
+          <span class="text-sm">Merge short cues</span>
+          <div class="join">
+            <button
+              class="btn join-item btn-sm"
+              aria-label="Fewer characters"
+              disabled={isMatching || mergeShortCues <= 1}
+              onclick={() => setMergeShortCues(mergeShortCues - 1)}
+            >
+              −
+            </button>
+            <span class="btn join-item btn-sm pointer-events-none w-36 whitespace-nowrap tabular-nums">
+              ≤ {mergeShortCues} {mergeShortCues === 1 ? "char (default)" : "chars"}
+            </span>
+            <button
+              class="btn join-item btn-sm"
+              aria-label="More characters"
+              disabled={isMatching || mergeShortCues >= MAX_MERGE_SHORT_CUES}
+              onclick={() => setMergeShortCues(mergeShortCues + 1)}
+            >
+              +
+            </button>
           </div>
         </div>
       {/if}

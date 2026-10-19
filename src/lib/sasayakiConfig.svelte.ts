@@ -15,6 +15,7 @@ export type SasayakiConfig = {
   sasayakiDarkBackgroundColor: string;
   sasayakiAudioFormat: "mp3" | "opus";
   sasayakiTranscriptionPerformance: number;
+  sasayakiMergeShortCues: number;
 };
 
 const defaults: SasayakiConfig = {
@@ -32,6 +33,7 @@ const defaults: SasayakiConfig = {
   sasayakiDarkBackgroundColor: "#87cefa66",
   sasayakiAudioFormat: "mp3",
   sasayakiTranscriptionPerformance: 1,
+  sasayakiMergeShortCues: 1,
 };
 
 const store = persisted<SasayakiConfig>("sasayaki.config", defaults);
