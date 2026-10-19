@@ -1,5 +1,5 @@
 import { persisted } from "./persisted.svelte";
-import { isMac } from "./platform";
+import { isLinux, isMac } from "./platform";
 
 export type FuriganaMode = "Off" | "Dimmed" | "Toggle" | "Hidden";
 export type ThemeName = "System" | "Light" | "Dark" | "Sepia" | "Custom";
@@ -14,9 +14,21 @@ export type CustomTheme = {
   infoColor: string;
 };
 
+// Linux distributions ship Noto CJK under these family names (Arch: noto-fonts-cjk).
+const linuxFonts: Record<string, string> = {
+  "Yu Mincho": "Noto Serif CJK JP",
+  "Noto Serif JP": "Noto Serif CJK JP",
+  "Hiragino Mincho ProN": "Noto Serif CJK JP",
+  "Yu Gothic": "Noto Sans CJK JP",
+  "Noto Sans JP": "Noto Sans CJK JP",
+  "Hiragino Kaku Gothic ProN": "Noto Sans CJK JP",
+};
+
 export const defaultFonts = isMac
   ? ["Hiragino Mincho ProN", "Hiragino Kaku Gothic ProN"]
-  : ["Yu Mincho", "Yu Gothic", "Noto Serif JP", "Noto Sans JP"];
+  : isLinux
+    ? ["Noto Serif CJK JP", "Noto Sans CJK JP"]
+    : ["Yu Mincho", "Yu Gothic", "Noto Serif JP", "Noto Sans JP"];
 
 export type ReaderConfig = {
   theme: ThemeName;
@@ -146,6 +158,11 @@ if (legacy.customBackgroundColor !== undefined) {
   delete legacy.customBackgroundColor;
   delete legacy.customTextColor;
   delete legacy.customInfoColor;
+  saveReaderConfig();
+}
+
+if (isLinux && !readerConfig.selectedFontFile && linuxFonts[readerConfig.selectedFont]) {
+  readerConfig.selectedFont = linuxFonts[readerConfig.selectedFont];
   saveReaderConfig();
 }
 

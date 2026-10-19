@@ -56,7 +56,7 @@
         const writingMode = vertical ? 'vertical-rl' : 'horizontal-tb';
         const imgWidth = `calc(${100 - paddingX}vw - 1px)`;
         const imgHeight = `${100 - paddingY}vh`;
-        const fontFamily = `${fontName ? `"${fontName}", ` : ''}"Hiragino Mincho ProN", "Yu Mincho", serif`;
+        const fontFamily = reader.fontStack(fontName);
         const furiganaLine = 'rgba(150, 150, 150, 0.75)';
 
         const contentSizeCss = vertical
@@ -182,6 +182,7 @@
             hoshi-html {
                 background: transparent !important;
             }
+            ${reader.verticalFormsCss(vertical, 'body, hoshi-body')}
             body, hoshi-body {
                 -webkit-text-size-adjust: none !important;
                 font-family: ${fontFamily} !important;
@@ -272,6 +273,7 @@
                 background-color: var(--hoshi-sasayaki-background-color) !important;
             }
         `;
+        reader.fitRubyToEmBox(vertical);
     }
 
     function applyFont() {

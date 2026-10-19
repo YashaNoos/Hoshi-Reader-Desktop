@@ -104,7 +104,7 @@
         ${columns}
         column-fill: auto !important;
         -webkit-text-size-adjust: none !important;
-        font-family: ${fontName ? `"${fontName}", ` : ""}"Hiragino Mincho ProN", "Yu Mincho", serif !important;
+        font-family: ${r.fontStack(fontName)} !important;
         ${justify ? "" : "text-align: start !important; hanging-punctuation: allow-end !important; line-break: strict !important;"}
         ${advanced ? `line-height: ${lineHeight} !important; letter-spacing: ${charSpacing / 100}em !important;` : ""}
         padding: ${paddingY / 2}vh ${side} !important;
@@ -112,6 +112,7 @@
         ${overlap ? `padding-bottom: calc(${paddingY / 2}vh + ${overlap}px) !important;` : ""}
         ${fontSize ? `font-size: ${fontSize}px !important;` : ""}
       }
+      ${r.verticalFormsCss(vertical)}
       ${avoidBreak ? "p { break-inside: avoid !important; -webkit-column-break-inside: avoid !important; }" : ""}
       ${
         advanced
@@ -212,6 +213,7 @@
       }
     `;
 
+    r.fitRubyToEmBox(vertical);
     spacers.forEach((spacer) => spacer.remove());
     spacers = [];
     r.spacer = null;

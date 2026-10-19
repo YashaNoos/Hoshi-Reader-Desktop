@@ -1858,7 +1858,7 @@
       {@const top = Math.round((frameHeight * effectivePadding(readerConfig.verticalPadding, readerConfig.maxHeight, frameHeight)) / 200)}
       {@const size = Math.max(11, Math.round(readerConfig.fontSize * 0.6))}
       {@const underButtons = macChrome && top + chromeInset / 2 - size / 2 < windowButtonsBottom}
-      {@const textStyle = `font: ${size}px "${readerConfig.selectedFont}", "Hiragino Mincho ProN", "Yu Mincho", serif${readerInfo ? `; color: ${readerInfo}` : ""}`}
+      {@const textStyle = `font: ${size}px "${readerConfig.selectedFont}", "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif CJK JP", serif${readerInfo ? `; color: ${readerInfo}` : ""}`}
       <span
         class="pointer-events-none absolute z-20 flex h-7 max-w-[40%] items-center gap-[1em] text-base-content/60 transition-opacity duration-200"
         class:opacity-0={resizing}

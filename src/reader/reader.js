@@ -24,6 +24,63 @@ window.hoshiReader = {
         const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
         return !!el?.closest('rt, rp');
     },
+
+    // WebKitGTK (Linux) has neither the macOS/Windows Japanese fonts nor applies
+    // the vertical glyph forms of 、。「」（）ー… on its own in vertical text.
+    isWebKitGtk: !navigator.userAgent.includes('Chrome/') && /Linux/.test(navigator.userAgent)
+        && !/Android/.test(navigator.userAgent),
+
+    fontStack(fontName) {
+        // Names the Linux Noto CJK packages use for the macOS/Windows defaults. Without
+        // a Japanese family in the stack, fontconfig falls back to a Chinese font.
+        const linuxEquivalent = {
+            'Noto Sans JP': 'Noto Sans CJK JP',
+            'Yu Gothic': 'Noto Sans CJK JP',
+            'Hiragino Kaku Gothic ProN': 'Noto Sans CJK JP',
+            'Noto Serif JP': 'Noto Serif CJK JP',
+            'Yu Mincho': 'Noto Serif CJK JP',
+            'Hiragino Mincho ProN': 'Noto Serif CJK JP',
+        };
+        const families = [fontName, linuxEquivalent[fontName], 'Hiragino Mincho ProN', 'Yu Mincho',
+            'Noto Serif CJK JP', 'Noto Serif JP', 'IPAexMincho', 'IPAMincho'];
+        return [...new Set(families.filter(Boolean))].map((family) => `"${family}"`).join(', ') + ', serif';
+    },
+
+    verticalFormsCss(vertical, selector = 'body') {
+        if (!this.isWebKitGtk) return '';
+        // Furigana: WebKitGTK places <rt> at the edge of the font's (hhea) line box, which
+        // for CJK fonts is ~0.2em larger than the character on each side, in vertical and
+        // in horizontal text. Pull it back to the character's em box, like Chromium/Safari
+        // (see fitRubyToEmBox).
+        const ruby = `
+            @property --hoshi-ruby-gap { syntax: "<length>"; inherits: true; initial-value: 0px; }
+            ruby { --hoshi-ruby-gap: calc(var(--hoshi-ruby-ratio, 0) * 1em); }
+            ruby > rt { transform: ${vertical
+                ? 'translateX(calc(-1 * var(--hoshi-ruby-gap)))'
+                : 'translateY(var(--hoshi-ruby-gap))'}; }`;
+        if (!vertical) return ruby;
+        // WebKitGTK ignores a forced 'vert' here, but 'vrt2' (which includes the 'vert'
+        // substitutions) works; Latin text is still rotated by WebKit as usual.
+        return `${selector} { font-feature-settings: "vert" 1, "vrt2" 1 !important; }` + ruby;
+    },
+
+    fitRubyToEmBox(vertical) {
+        if (!this.isWebKitGtk) return;
+        document.fonts.ready.then(() => {
+            const parent = document.querySelector('ruby')?.parentElement;
+            if (!parent) return;
+            const probe = document.createElement('span');
+            probe.textContent = '漢';
+            parent.appendChild(probe);
+            const em = parseFloat(getComputedStyle(probe).fontSize);
+            const rect = probe.getBoundingClientRect();
+            const lineBox = vertical ? rect.width : rect.height;
+            probe.remove();
+            if (!em || !lineBox) return;
+            const ratio = Math.min(0.5, Math.max(0, (lineBox / em - 1) / 2));
+            document.documentElement.style.setProperty('--hoshi-ruby-ratio', ratio.toFixed(4));
+        });
+    },
     
     countChars(text) {
         return Array.from(this.normalizeText(text)).length;
