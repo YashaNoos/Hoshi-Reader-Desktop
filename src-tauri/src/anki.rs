@@ -963,7 +963,10 @@ pub async fn anki_mine(
             });
         if let Some((path, ext, bytes)) = cover {
             let filename = format!("hoshi_cover_{}.{ext}", sha1_hex(&bytes));
-            if local_anki(&config) {
+            // Linux: Anki is often a Flatpak or Snap whose sandbox cannot read the app's data
+            // folder, so AnkiConnect fails on the path with "[Errno 13] Permission denied".
+            // Send the bytes instead, as for a remote Anki (audio is always sent as data).
+            if local_anki(&config) && !cfg!(target_os = "linux") {
                 let path = path.to_string_lossy();
                 note["picture"] =
                     json!([{ "path": path, "filename": filename, "fields": picture_fields }]);
