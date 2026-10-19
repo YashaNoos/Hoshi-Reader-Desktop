@@ -88,24 +88,35 @@ fn text() -> Option<String> {
 
 // Linux has no clipboard change counter, so the "count" is a hash of the current
 // text and the text read for it is cached for the `text()` call that follows.
+// A read that fails or finds no text keeps the previous count: Wayland/X11 reads
+// can fail transiently, and counting that as a change made the next good read
+// look like a new copy, re-running the lookup every few polls and resetting the
+// dictionary pane to its first word.
 // Limitation: copying the same text twice in a row is not seen as a change.
 #[cfg(target_os = "linux")]
 static LAST_TEXT: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
 #[cfg(target_os = "linux")]
+static LAST_COUNT: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+
+#[cfg(target_os = "linux")]
 fn change_count() -> i64 {
     use std::hash::{Hash, Hasher};
+    use std::sync::atomic::Ordering;
 
     let current = arboard::Clipboard::new()
         .and_then(|mut clipboard| clipboard.get_text())
         .ok()
         .filter(|text| !text.is_empty());
-    let count = current.as_ref().map_or(0, |text| {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        text.hash(&mut hasher);
-        (hasher.finish() >> 1) as i64
-    });
-    *LAST_TEXT.lock().unwrap() = current;
+    let Some(current) = current else {
+        *LAST_TEXT.lock().unwrap() = None;
+        return LAST_COUNT.load(Ordering::Relaxed);
+    };
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    current.hash(&mut hasher);
+    let count = (hasher.finish() >> 1) as i64;
+    LAST_COUNT.store(count, Ordering::Relaxed);
+    *LAST_TEXT.lock().unwrap() = Some(current);
     count
 }
 
