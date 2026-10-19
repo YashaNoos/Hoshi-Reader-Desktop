@@ -12,13 +12,13 @@ rust-version = "1.88"
 name = "hoshi_reader_lib"
 
 [build-dependencies]
-tauri-build = { version = "2.6.2", features = [] }
+tauri-build = { version = "2.7.2", features = [] }
 serde_json = "1.0"
 
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-tauri = { version = "2.11.2", features = [] }
+tauri = { version = "2.12.3", features = [] }
 rbook = "0.7"
 urlencoding = "2.1.3"
 tauri-plugin-dialog = "2.7.1"
