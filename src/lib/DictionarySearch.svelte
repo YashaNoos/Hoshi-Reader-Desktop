@@ -180,8 +180,11 @@
         const [count, text]: [number, string | null] = await invoke("clipboard_text", { since });
         if (stopped) return;
         since = count;
-        if (text?.trim()) {
-          query = text.trim();
+        const copied = text?.trim();
+        // Skip text that is already the current search: re-running the lookup
+        // would reset the pane and drop whatever word the user clicked in it.
+        if (copied && copied !== searchText) {
+          query = copied;
           runLookup();
         }
         await new Promise((resolve) => setTimeout(resolve, 300));
