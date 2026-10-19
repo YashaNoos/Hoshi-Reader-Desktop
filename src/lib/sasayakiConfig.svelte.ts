@@ -16,6 +16,7 @@ export type SasayakiConfig = {
   sasayakiAudioFormat: "mp3" | "opus";
   sasayakiTranscriptionPerformance: number;
   sasayakiMergeShortCues: number;
+  sasayakiTranscriptionModel: "parakeet" | "reazonspeech";
 };
 
 const defaults: SasayakiConfig = {
@@ -34,6 +35,7 @@ const defaults: SasayakiConfig = {
   sasayakiAudioFormat: "mp3",
   sasayakiTranscriptionPerformance: 1,
   sasayakiMergeShortCues: 1,
+  sasayakiTranscriptionModel: "parakeet",
 };
 
 const store = persisted<SasayakiConfig>("sasayaki.config", defaults);

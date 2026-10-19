@@ -13,6 +13,30 @@ const SPEECH_LEAD_SAMPLES: i64 = 16_000;
 const SPEECH_CONTINUATION_LEAD_SAMPLES: i64 = 8_000;
 const SPEECH_TAIL_SAMPLES: i64 = 4_000;
 
+/// How speech is cut into pieces for the model. A pause of at least 0.5 s ends a piece
+/// once the piece is `min_piece` long; a pause of `long_pause` always ends it. Pieces are
+/// cut at most at `max_piece`, at a pause when there is one.
+#[derive(Clone, Copy)]
+pub struct Cutting {
+    min_piece: i64,
+    long_pause: i64,
+    max_piece: i64,
+}
+
+impl Cutting {
+    /// parakeet uses context (15-30 s pieces). Given a long silence inside a piece, it
+    /// tends to transcribe only one side of it, so 1.25 s of silence always ends one.
+    pub const PARAKEET: Cutting = Cutting { min_piece: 240_000, long_pause: 20_000, max_piece: 480_000 };
+    /// ReazonSpeech, as on the other platforms: every pause ends a piece, at most 20 s.
+    pub const REAZONSPEECH: Cutting = Cutting { min_piece: 0, long_pause: 8_000, max_piece: 320_000 };
+}
+
+impl Default for Cutting {
+    fn default() -> Self {
+        Cutting::PARAKEET
+    }
+}
+
 /// Clean audiobook speech is separated from silence by energy. A bounded 30-second
 /// histogram follows the recording's noise floor.
 pub struct EnergyVad {
@@ -80,6 +104,7 @@ struct SpeechSegmenter {
     speech: bool,
     silence_start: Option<i64>,
     continuation: bool,
+    cutting: Cutting,
 }
 
 impl SpeechSegmenter {
@@ -103,7 +128,8 @@ impl SpeechSegmenter {
         }
         if probability < 0.35 {
             let silence = *self.silence_start.get_or_insert(frame_start);
-            if self.position - silence >= 8_000 {
+            let long_enough = silence - self.candidate_start.unwrap_or(silence) >= self.cutting.min_piece;
+            if self.position - silence >= 8_000 && (long_enough || self.position - silence >= self.cutting.long_pause) {
                 let result = self.bounds(silence);
                 self.candidate_start = None;
                 self.silence_start = None;
@@ -115,7 +141,7 @@ impl SpeechSegmenter {
             self.silence_start = None;
         }
         let candidate = self.candidate_start.unwrap();
-        if self.position - candidate >= 320_000 {
+        if self.position - candidate >= self.cutting.max_piece {
             let end = self.silence_start.unwrap_or(self.position);
             let result = SpeechBounds { start: candidate, end, hard_cut: self.silence_start.is_none() };
             self.speech = self.silence_start.is_none();
@@ -207,7 +233,18 @@ pub fn project_tokens(texts: &[String], timestamps: &[f32], segment_start: f64, 
         {
             continue;
         }
-        tokens.push(Token { text, start, end: next.max(start).min(segment_end) });
+        // Sentence pieces can hold several characters (っている): one token per character,
+        // spread over the piece's interval. Spaces and punctuation are dropped.
+        let end = next.max(start).min(segment_end);
+        let characters: Vec<char> = text.chars().filter(|c| c.is_alphanumeric()).collect();
+        let step = (end - start) / characters.len().max(1) as f64;
+        for (position, character) in characters.iter().enumerate() {
+            tokens.push(Token {
+                text: character.to_string(),
+                start: start + step * position as f64,
+                end: start + step * (position + 1) as f64,
+            });
+        }
     }
     tokens
 }
@@ -226,12 +263,12 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
-    pub fn new(from: f64, duration: f64, audio_from: f64) -> Self {
+    pub fn new(from: f64, duration: f64, audio_from: f64, cutting: Cutting) -> Self {
         Pipeline {
             origin_sample: (audio_from * SAMPLE_RATE as f64 - 1e-8).ceil() as i64,
             duration,
-            history: AudioHistory::new(24 * SAMPLE_RATE as usize),
-            segmenter: SpeechSegmenter::default(),
+            history: AudioHistory::new(48 * SAMPLE_RATE as usize),
+            segmenter: SpeechSegmenter { cutting, ..Default::default() },
             vad: EnergyVad::new(),
             pending: VecDeque::new(),
             scheduled_through: from,
