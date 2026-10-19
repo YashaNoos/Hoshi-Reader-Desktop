@@ -93,6 +93,101 @@ unsafe fn read_media_foundation(
     }
 }
 
+#[cfg(target_os = "linux")]
+pub fn decode(path: &Path, start: f64, end: f64, mime: &str) -> Option<Pcm> {
+    use symphonia::core::audio::SampleBuffer;
+    use symphonia::core::codecs::{CODEC_TYPE_NULL, DecoderOptions};
+    use symphonia::core::errors::Error;
+    use symphonia::core::formats::{FormatOptions, SeekMode, SeekTo};
+    use symphonia::core::io::MediaSourceStream;
+    use symphonia::core::meta::MetadataOptions;
+    use symphonia::core::probe::Hint;
+    use symphonia::core::units::Time;
+
+    let file = std::fs::File::open(path).ok()?;
+    let stream = MediaSourceStream::new(Box::new(file), Default::default());
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension().and_then(|ext| ext.to_str()) {
+        hint.with_extension(ext);
+    }
+    hint.mime_type(mime);
+    let mut format = symphonia::default::get_probe()
+        .format(
+            &hint,
+            stream,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
+        .ok()?
+        .format;
+
+    let track = format
+        .tracks()
+        .iter()
+        .find(|track| track.codec_params.codec != CODEC_TYPE_NULL)?;
+    let track_id = track.id;
+    let params = track.codec_params.clone();
+    let mut decoder = symphonia::default::get_codecs()
+        .make(&params, &DecoderOptions::default())
+        .ok()?;
+
+    // Position (in seconds) of the first frame we will decode.
+    let mut cursor = match format.seek(
+        SeekMode::Accurate,
+        SeekTo::Time {
+            time: Time::from(start.max(0.0)),
+            track_id: Some(track_id),
+        },
+    ) {
+        Ok(seeked) => {
+            decoder.reset();
+            params
+                .time_base
+                .map(|base| {
+                    let time = base.calc_time(seeked.actual_ts);
+                    time.seconds as f64 + time.frac
+                })
+                .unwrap_or(start)
+        }
+        Err(_) => 0.0,
+    };
+
+    let mut samples: Vec<i16> = Vec::new();
+    let (mut rate, mut channels) = (0u32, 0usize);
+    while cursor < end {
+        let Ok(packet) = format.next_packet() else {
+            break;
+        };
+        if packet.track_id() != track_id {
+            continue;
+        }
+        let decoded = match decoder.decode(&packet) {
+            Ok(decoded) => decoded,
+            Err(Error::DecodeError(_)) => continue,
+            Err(_) => break,
+        };
+        let spec = *decoded.spec();
+        rate = spec.rate;
+        channels = spec.channels.count();
+        if rate == 0 || channels == 0 {
+            continue;
+        }
+        let mut buffer = SampleBuffer::<i16>::new(decoded.capacity() as u64, spec);
+        buffer.copy_interleaved_ref(decoded);
+        let chunk = buffer.samples();
+        let frames = chunk.len() / channels;
+        let skip = (((start - cursor).max(0.0) * rate as f64) as usize).min(frames);
+        samples.extend_from_slice(&chunk[skip * channels..]);
+        cursor += frames as f64 / rate as f64;
+    }
+
+    if rate == 0 || channels == 0 || samples.is_empty() {
+        return None;
+    }
+    samples.truncate(((end - start) * rate as f64) as usize * channels);
+    Some((samples, rate, channels))
+}
+
 #[cfg(target_os = "macos")]
 pub fn decode(path: &Path, start: f64, end: f64, _mime: &str) -> Option<Pcm> {
     use std::ffi::{CString, c_char, c_void};
