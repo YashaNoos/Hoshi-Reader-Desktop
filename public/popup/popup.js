@@ -9,6 +9,32 @@
 //
 
 const HOSHI_HTTP_SCHEME = /Windows|Android/.test(navigator.userAgent);
+
+// WebKitGTK 2.54 (Linux) does not load <img> URLs on another custom scheme (image://)
+// inside this iframe, while fetch() of the same URL works. On Linux, images are fetched
+// and shown from a blob: URL instead.
+const HOSHI_FETCH_IMAGES = /Linux/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent);
+function setHoshiImageSource(image, url) {
+    if (!HOSHI_FETCH_IMAGES) {
+        image.src = url;
+        return;
+    }
+    fetch(url)
+        .then((response) => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return response.blob();
+        })
+        .then((blob) => {
+            const objectUrl = URL.createObjectURL(blob);
+            const revoke = () => URL.revokeObjectURL(objectUrl);
+            image.addEventListener('load', revoke, {once: true});
+            image.addEventListener('error', revoke, {once: true});
+            image.src = objectUrl;
+        })
+        .catch(() => {
+            image.src = url;
+        });
+}
 function hoshiSchemeUrl(scheme, path = '') {
     return HOSHI_HTTP_SCHEME ? `http://${scheme}.localhost/${path}` : `${scheme}://localhost/${path}`;
 }
@@ -716,7 +742,7 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                     aspectRatioSizer.style.paddingTop = `${aspectRatio * 100}%`;
                 }, {once: true});
             }
-            img.src = imageUrl;
+            setHoshiImageSource(img, imageUrl);
             imageContainer.appendChild(img);
         }
     } else {
@@ -757,7 +783,7 @@ function createDefinitionImageCanvas(imageUrl, onLoad) {
     sourceImage.addEventListener('load', () => {
         onLoad(canvas, sourceImage);
     }, {once: true});
-    sourceImage.src = imageUrl;
+    setHoshiImageSource(sourceImage, imageUrl);
     
     return canvas;
 }
