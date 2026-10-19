@@ -67,6 +67,21 @@
     else subtitleFile = result;
   }
 
+  // Linux build (0018): 1 = upstream's cutting (it never makes a 1-character piece a cue).
+  const MAX_MERGE_SHORT_CUES = 6;
+  const MERGE_SHORT_CUES_HELP = [
+    "Joins very short bits of a sentence to the text next to them, so they don’t flash by as a line of their own. The number is the longest bit that gets joined, in characters (punctuation not counted).",
+    "1 (default): |だが、|それは無理だろう、|たぶん|。",
+    "≤ 2: |だが、それは無理だろう、|たぶん|。",
+    "≤ 3: |だが、それは無理だろう、たぶん|。",
+    "Applies on the next Match.",
+  ].join("\n");
+  const mergeShortCues = $derived(Math.min(MAX_MERGE_SHORT_CUES, Math.max(1, sasayakiConfig.sasayakiMergeShortCues)));
+  function setMergeShortCues(value: number) {
+    sasayakiConfig.sasayakiMergeShortCues = value;
+    saveSasayakiConfig();
+  }
+
   async function start() {
     isMatching = true;
     matchError = "";
@@ -77,9 +92,10 @@
           id: bookId,
           path: file,
           performance: sasayakiConfig.sasayakiTranscriptionPerformance,
+          mergeShortCues,
           onProgress,
         });
-      else await invoke("sasayaki_match", { id: bookId, path: file });
+      else await invoke("sasayaki_match", { id: bookId, path: file, mergeShortCues });
       onMatched();
     } catch (e) {
       matchError = String(e);
@@ -182,6 +198,34 @@
           </div>
         </div>
       {/if}
+
+      <div
+        class="flex items-center justify-between gap-3"
+        title={MERGE_SHORT_CUES_HELP}
+      >
+        <span class="text-sm">Merge short cues</span>
+        <div class="join">
+          <button
+            class="btn join-item btn-sm"
+            aria-label="Fewer characters"
+            disabled={isMatching || mergeShortCues <= 1}
+            onclick={() => setMergeShortCues(mergeShortCues - 1)}
+          >
+            −
+          </button>
+          <span class="btn join-item btn-sm pointer-events-none w-36 whitespace-nowrap tabular-nums">
+            ≤ {mergeShortCues} {mergeShortCues === 1 ? "char (default)" : "chars"}
+          </span>
+          <button
+            class="btn join-item btn-sm"
+            aria-label="More characters"
+            disabled={isMatching || mergeShortCues >= MAX_MERGE_SHORT_CUES}
+            onclick={() => setMergeShortCues(mergeShortCues + 1)}
+          >
+            +
+          </button>
+        </div>
+      </div>
 
       <div class="flex items-center justify-between gap-3">
         <span class="min-w-0 truncate text-sm">{file ? fileName(file) : "No file selected"}</span>

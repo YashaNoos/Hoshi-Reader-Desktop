@@ -275,7 +275,7 @@ pub fn build_source(app: &AppHandle, id: &str) -> Result<Source, String> {
     Ok(source)
 }
 
-fn match_cues(source: Source, cues: &[SasayakiCue]) -> SasayakiMatchData {
+fn match_cues(source: Source, cues: &[SasayakiCue], merge_short: usize) -> SasayakiMatchData {
     let mut candidates = Vec::new();
     for cue in cues.iter().take(15) {
         if cue.text.starts_with('＊') {
@@ -360,10 +360,81 @@ fn match_cues(source: Source, cues: &[SasayakiCue]) -> SasayakiMatchData {
     }
 
     SasayakiMatchData {
-        matches,
+        matches: merge_short_cues(matches, &source, merge_short),
         unmatched,
         images: source.images,
     }
+}
+
+/// Linux build (0018): subtitle cues of `merge_short` characters or fewer join the cue next
+/// to them, when the two follow each other in the book within one sentence. A short ending
+/// (、きっと。) joins the cue before it, any other short cue (だが、) the cue after it.
+/// 1 (or 0) keeps the subtitle's cues as they are.
+fn merge_short_cues(matches: Vec<SasayakiMatch>, source: &Source, merge_short: usize) -> Vec<SasayakiMatch> {
+    if merge_short <= 1 {
+        return matches;
+    }
+    let ends_sentence = |cue: &SasayakiMatch| {
+        source
+            .chapters
+            .iter()
+            .find(|chapter| chapter.chapter_index == cue.chapter_index)
+            .is_none_or(|chapter| {
+                let last = chapter.start + cue.start + cue.length - 1;
+                last + 1 >= chapter.end() || source.sentence_ends[last]
+            })
+    };
+    let adjacent = |first: &SasayakiMatch, second: &SasayakiMatch| {
+        first.chapter_index == second.chapter_index
+            && first.start + first.length == second.start
+            && !ends_sentence(first)
+    };
+    let short = |cue: &SasayakiMatch| cue.length <= merge_short;
+    let join = |first: SasayakiMatch, second: SasayakiMatch| SasayakiMatch {
+        id: first.id,
+        start_time: first.start_time,
+        end_time: second.end_time.max(first.end_time),
+        text: first.text + &second.text,
+        chapter_index: first.chapter_index,
+        start: first.start,
+        length: first.length + second.length,
+    };
+
+    // Short endings join the cue before them.
+    let mut joined: Vec<SasayakiMatch> = Vec::with_capacity(matches.len());
+    for cue in matches {
+        match joined.pop() {
+            Some(previous) if short(&cue) && ends_sentence(&cue) && adjacent(&previous, &cue) => {
+                joined.push(join(previous, cue));
+            }
+            previous => {
+                joined.extend(previous);
+                joined.push(cue);
+            }
+        }
+    }
+    // Other short cues join the cue after them, or the one before when that is not possible.
+    let mut forward: Vec<SasayakiMatch> = Vec::with_capacity(joined.len());
+    for cue in joined.into_iter().rev() {
+        match forward.pop() {
+            Some(next) if short(&cue) && adjacent(&cue, &next) => forward.push(join(cue, next)),
+            next => {
+                forward.extend(next);
+                forward.push(cue);
+            }
+        }
+    }
+    let mut result: Vec<SasayakiMatch> = Vec::with_capacity(forward.len());
+    for cue in forward.into_iter().rev() {
+        match result.pop() {
+            Some(previous) if short(&cue) && adjacent(&previous, &cue) => result.push(join(previous, cue)),
+            previous => {
+                result.extend(previous);
+                result.push(cue);
+            }
+        }
+    }
+    result
 }
 
 pub fn load_match(app: &AppHandle, id: &str) -> Option<SasayakiMatchData> {
@@ -403,10 +474,11 @@ pub fn sasayaki_match(
     app: AppHandle,
     id: String,
     path: String,
+    merge_short_cues: Option<usize>,
 ) -> Result<SasayakiMatchData, String> {
     let data = fs::read(&path).map_err(|error| error.to_string())?;
     let cues = parse_cues(&data);
-    let result = match_cues(build_source(&app, &id)?, &cues);
+    let result = match_cues(build_source(&app, &id)?, &cues, merge_short_cues.unwrap_or(1));
     let dir = library::book_dir(&app, &id).ok_or_else(|| format!("Book {id} was not found"))?;
     let folder = library::load_metadata_at(&dir).unwrap().folder;
     crate::sync::storage::shared()
@@ -816,4 +888,41 @@ fn encode_opus(samples: &[i16], rate: u32, channels: usize) -> Option<Vec<u8>> {
             .ok()?;
     }
     Some(writer.into_inner())
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::*;
+
+    fn cue(id: &str, start: usize, text: &str) -> SasayakiMatch {
+        let length = library::filtered(text).chars().count();
+        SasayakiMatch {
+            id: id.into(),
+            start_time: start as f64,
+            end_time: (start + length) as f64,
+            text: text.into(),
+            chapter_index: 0,
+            start,
+            length,
+        }
+    }
+
+    #[test]
+    fn short_subtitle_cues_join_their_neighbour() {
+        // だが、彼は来た、きっと。次の文。
+        let (text, sentence_ends, segment_ends) = flatten("<p>だが、彼は来た、きっと。次の文。</p>");
+        let source = Source {
+            chapters: vec![Chapter { chapter_index: 0, start: 0, length: text.len() }],
+            text,
+            sentence_ends,
+            segment_ends,
+            images: Vec::new(),
+        };
+        let cues = || vec![cue("0", 0, "だが、"), cue("1", 2, "彼は来た、"), cue("2", 6, "きっと。"), cue("3", 9, "次の文。")];
+        let texts = |merged: Vec<SasayakiMatch>| merged.into_iter().map(|m| m.text).collect::<Vec<_>>();
+        assert_eq!(texts(merge_short_cues(cues(), &source, 1)), ["だが、", "彼は来た、", "きっと。", "次の文。"]);
+        assert_eq!(texts(merge_short_cues(cues(), &source, 2)), ["だが、彼は来た、", "きっと。", "次の文。"]);
+        // 次の文。 is 3 characters but a sentence of its own: it stays.
+        assert_eq!(texts(merge_short_cues(cues(), &source, 3)), ["だが、彼は来た、きっと。", "次の文。"]);
+    }
 }
