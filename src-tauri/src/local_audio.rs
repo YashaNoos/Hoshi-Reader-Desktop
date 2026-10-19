@@ -56,16 +56,21 @@ fn query_param(uri: &str, key: &str) -> Option<String> {
     Some(urlencoding::decode(value).ok()?.into_owned())
 }
 
-fn scheme_base() -> &'static str {
+fn scheme_base() -> String {
     if cfg!(windows) {
-        "http://audio.localhost/"
+        "http://audio.localhost/".to_string()
+    } else if cfg!(target_os = "linux")
+        && let Some(base) = crate::media_server::BASE.get()
+    {
+        // WebKitGTK cannot play <audio> from custom schemes; see media_server.
+        format!("{base}audio/")
     } else {
-        "audio://localhost/"
+        "audio://localhost/".to_string()
     }
 }
 
 pub fn file_params(url: &str) -> Option<(String, String)> {
-    if !url.starts_with("audio://localhost/") && !url.starts_with(scheme_base()) {
+    if !url.starts_with("audio://localhost/") && !url.starts_with(&scheme_base()) {
         return None;
     }
     Some((query_param(url, "source")?, query_param(url, "file")?))
