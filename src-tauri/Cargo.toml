@@ -83,7 +83,7 @@ libloading = "0.8"
 
 [features]
 default = ["transcription"]
-# Linux: on-device Sasayaki transcription (sherpa-onnx + ReazonSpeech). No effect on macOS/Windows.
+# Linux: on-device Sasayaki transcription (sherpa-onnx + parakeet or ReazonSpeech). No effect on macOS/Windows.
 transcription = ["dep:sherpa-onnx"]
 
 [profile.dev.package."*"]

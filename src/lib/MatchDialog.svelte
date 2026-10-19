@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Channel, invoke } from "@tauri-apps/api/core";
   import { ask, open } from "@tauri-apps/plugin-dialog";
-  import { isWindows } from "./platform";
+  import { isLinux, isWindows } from "./platform";
   import { sasayakiConfig, saveSasayakiConfig } from "./sasayakiConfig.svelte";
   import type { BookInfo, SasayakiMatchData, SasayakiPlayback } from "./types";
 
@@ -9,7 +9,7 @@
     | { state: "downloading"; fraction: number }
     | { state: "transcribing"; through: number; duration: number; remaining: number | null }
     | { state: "aligning" };
-  type Transcript = { through: number; duration: number };
+  type Transcript = { through: number; duration: number; model?: string };
 
   let { onMatched }: { onMatched: () => void } = $props();
 
@@ -28,8 +28,35 @@
 
   const canTranscribe = $derived(transcriberStatus === "available");
   const file = $derived(useAudio ? audioFile : subtitleFile);
+  // Linux build (0019): the speech model. A saved transcription of the other model is
+  // started over; one saved without a model was made by ReazonSpeech (earlier builds).
+  const MODELS = [
+    {
+      id: "parakeet",
+      label: "parakeet",
+      description:
+        "NVIDIA parakeet-tdt_ctc-0.6b-ja. Hears more of the text (names, short phrases after a pause) and writes words in kanji like the book, so more of the book is matched. 630 MB download.",
+    },
+    {
+      id: "reazonspeech",
+      label: "ReazonSpeech",
+      description:
+        "ReazonSpeech k2 v2, the model Hoshi Reader uses on Android. Smaller (160 MB download) and about twice as fast, but more of the book stays unmatched: it drops some names and short phrases, and writes some words in kana (あした for 明日).",
+    },
+  ] as const;
+  const model = $derived(MODELS.find((entry) => entry.id === sasayakiConfig.sasayakiTranscriptionModel) ?? MODELS[0]);
+  const transcriptModel = $derived(
+    isLinux && transcript ? (MODELS.find((entry) => entry.id === (transcript?.model ?? "reazonspeech")) ?? null) : null,
+  );
+  const otherModel = $derived(transcriptModel !== null && transcriptModel.id !== model.id);
+  function setModel(id: (typeof MODELS)[number]["id"]) {
+    sasayakiConfig.sasayakiTranscriptionModel = id;
+    saveSasayakiConfig();
+  }
+
   const resumable = $derived(
     useAudio &&
+      !otherModel &&
       transcript !== null &&
       transcript.through > 0 &&
       !(transcript.duration > 0 && transcript.through + 1.5 >= transcript.duration),
@@ -93,6 +120,7 @@
           path: file,
           performance: sasayakiConfig.sasayakiTranscriptionPerformance,
           mergeShortCues,
+          model: isLinux ? model.id : null,
           onProgress,
         });
       else await invoke("sasayaki_match", { id: bookId, path: file, mergeShortCues });
@@ -196,6 +224,32 @@
               </button>
             {/each}
           </div>
+        </div>
+      {/if}
+
+      {#if isLinux && useAudio}
+        <div class="flex flex-col gap-1.5">
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-sm">Model</span>
+            <div class="join">
+              {#each MODELS as entry (entry.id)}
+                <button
+                  class="btn join-item btn-sm {model.id === entry.id ? 'btn-active' : ''}"
+                  disabled={isMatching}
+                  onclick={() => setModel(entry.id)}
+                >
+                  {entry.label}
+                </button>
+              {/each}
+            </div>
+          </div>
+          <span class="text-xs text-base-content/60">{model.description}</span>
+          {#if otherModel && transcriptModel}
+            <span class="text-xs text-warning">
+              The saved transcription was made with {transcriptModel.label}. Match transcribes the audio again with
+              {model.label}.
+            </span>
+          {/if}
         </div>
       {/if}
 

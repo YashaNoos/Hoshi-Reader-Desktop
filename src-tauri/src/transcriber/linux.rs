@@ -1,6 +1,7 @@
-//! Linux transcription backend: sherpa-onnx with the ReazonSpeech model (see
-//! `crate::transcription`). The model (~160 MB) is downloaded on first use into the app's
-//! cache directory and checked with SHA-256; after that everything runs offline.
+//! Linux transcription backend: sherpa-onnx with NVIDIA's parakeet-tdt_ctc-0.6b-ja (~630 MB)
+//! or ReazonSpeech k2 v2 (~160 MB), chosen in Match (see `crate::transcription`). The model
+//! is downloaded on first use into the app's cache directory and checked with SHA-256;
+//! after that everything runs offline.
 //!
 //! Built without the `transcription` feature, transcription reports "unsupported".
 
@@ -17,9 +18,17 @@ pub struct Audio {
     /// Already saved tokens near the resume point, to drop repeated words.
     #[cfg_attr(not(feature = "transcription"), allow(dead_code))]
     previous: Vec<SasayakiToken>,
+    /// "parakeet" or "reazonspeech".
+    #[cfg_attr(not(feature = "transcription"), allow(dead_code))]
+    model: String,
 }
 
 impl Audio {
+    pub fn with_model(mut self, model: &str) -> Self {
+        self.model = model.to_string();
+        self
+    }
+
     pub fn resuming_after(mut self, tokens: &[SasayakiToken], through: f64) -> Self {
         let tail = tokens.partition_point(|token| token.end < through - 1.0);
         self.previous = tokens[tail..].to_vec();
@@ -36,6 +45,7 @@ pub fn prepare(path: &str) -> Result<Audio, String> {
         path,
         duration,
         previous: Vec::new(),
+        model: String::new(),
     })
 }
 
@@ -58,8 +68,9 @@ pub fn start(
         .path()
         .app_cache_dir()
         .unwrap_or_else(|_| std::env::temp_dir())
-        .join("Models")
-        .join("reazonspeech-k2-v2-int8");
+        .join("Models");
+    let model = crate::transcription::model::Model::from_id(&audio.model);
+    let model_dir = model_dir.join(model.dir_name());
     let stop = Arc::new(AtomicBool::new(false));
     let flag = stop.clone();
     tauri::async_runtime::spawn(async move {
@@ -68,6 +79,7 @@ pub fn start(
     });
     std::thread::spawn(move || {
         let result = crate::transcription::transcribe(
+            model,
             &model_dir,
             &audio.path,
             from,
