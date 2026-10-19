@@ -63,6 +63,84 @@ const JAPANESE_RANGES = [
     ...FULLWIDTH_CHARACTER_RANGES, // FULLWIDTH_CHARACTER_RANGES
 ];
 
+// Linux (WebKitGTK): the native selection highlight of a line that is not the first of its
+// paragraph is stretched to reach the previous line (WebKit fills the gap between lines),
+// so in vertical text the lookup highlight is much wider on inner lines. Keep the native
+// selection but make it transparent, and draw the highlight from the characters' own
+// boxes (range.getClientRects()) in a fixed layer on top (above book backgrounds; the
+// 40% gray tints the glyphs only slightly).
+const HOSHI_LOOKUP_OVERLAY = /Linux/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent);
+const hoshiLookupOverlay = {
+    range: null,
+    layer: null,
+    show(range) {
+        if (!this.layer) {
+            const style = document.createElement('style');
+            style.textContent = `
+                html.hoshi-lookup-selection ::selection { background-color: transparent !important; }
+                #hoshi-lookup-overlay { position: fixed; inset: 0; z-index: 2147483647; pointer-events: none;
+                    writing-mode: horizontal-tb; }
+                #hoshi-lookup-overlay > div { position: absolute; background-color: rgba(160, 160, 160, 0.4); }`;
+            document.head.appendChild(style);
+            this.layer = document.createElement('div');
+            this.layer.id = 'hoshi-lookup-overlay';
+            addEventListener('scroll', () => this.draw(), { capture: true, passive: true });
+            addEventListener('resize', () => this.draw(), { passive: true });
+        }
+        if (!this.layer.isConnected) document.documentElement.appendChild(this.layer);
+        this.range = range;
+        document.documentElement.classList.add('hoshi-lookup-selection');
+        this.draw();
+    },
+    draw() {
+        if (!this.layer) return;
+        this.layer.replaceChildren();
+        if (!this.range) return;
+        for (const rect of this.rects(this.range)) {
+            if (rect.width < 1 || rect.height < 1) continue;
+            const box = document.createElement('div');
+            box.style.left = `${rect.left}px`;
+            box.style.top = `${rect.top}px`;
+            box.style.width = `${rect.width}px`;
+            box.style.height = `${rect.height}px`;
+            this.layer.appendChild(box);
+        }
+    },
+    // Rects of the range's text, without furigana: <rt>/<rp> are not selectable, so the
+    // native highlight skips them and so does this one.
+    rects(range) {
+        const root = range.commonAncestorContainer;
+        if (root.nodeType === Node.TEXT_NODE) {
+            return root.parentElement?.closest('rt, rp') ? [] : Array.from(range.getClientRects());
+        }
+        const rects = [];
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            if (!range.intersectsNode(node) || node.parentElement?.closest('rt, rp')) continue;
+            const part = document.createRange();
+            part.selectNodeContents(node);
+            if (node === range.startContainer) part.setStart(node, range.startOffset);
+            if (node === range.endContainer) part.setEnd(node, range.endOffset);
+            rects.push(...part.getClientRects());
+        }
+        return rects;
+    },
+    hide() {
+        this.range = null;
+        document.documentElement.classList.remove('hoshi-lookup-selection');
+        this.layer?.replaceChildren();
+    },
+    // the user selected something else (e.g. by dragging): show that selection normally
+    onSelectionChange(selection) {
+        if (!this.range) return;
+        const current = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
+        if (!current || current.compareBoundaryPoints(Range.START_TO_START, this.range) !== 0 ||
+            current.compareBoundaryPoints(Range.END_TO_END, this.range) !== 0) {
+            this.hide();
+        }
+    },
+};
+
 window.hoshiSelection = {
     selection: null,
     scanDelimiters: '。、！？…‥「」『』（）()【】〈〉《》〔〕｛｝{}［］[]：；:;，,.─\n\r',
@@ -467,8 +545,10 @@ window.hoshiSelection = {
             const range = document.createRange();
             range.setStart(startPoint.node, startPoint.offset);
             range.setEnd(endPoint.node, endPoint.offset);
+            if (HOSHI_LOOKUP_OVERLAY) hoshiLookupOverlay.hide();
             selection.removeAllRanges();
             selection.addRange(range);
+            if (HOSHI_LOOKUP_OVERLAY) hoshiLookupOverlay.show(range);
         }
     },
     
@@ -486,6 +566,7 @@ window.hoshiSelection = {
     },
     
     clearSelection() {
+        if (HOSHI_LOOKUP_OVERLAY) hoshiLookupOverlay.hide();
         window.getSelection()?.removeAllRanges();
         CSS.highlights?.get('hoshi-selection')?.clear();
         this.selection = null;
@@ -495,6 +576,7 @@ window.hoshiSelection = {
 let lastHasSelection = false;
 document.addEventListener('selectionchange', () => {
     const s = getSelection();
+    if (HOSHI_LOOKUP_OVERLAY) hoshiLookupOverlay.onSelectionChange(s);
     const hasSelection = !!s && !s.isCollapsed;
     if (hasSelection === lastHasSelection) return;
     lastHasSelection = hasSelection;
