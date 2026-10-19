@@ -16,6 +16,9 @@ mod backend;
 #[cfg(windows)]
 #[path = "transcriber/nakuru.rs"]
 mod backend;
+#[cfg(target_os = "linux")]
+#[path = "transcriber/linux.rs"]
+mod backend;
 
 const TRANSCRIPT_FILE: &str = "sasayaki_transcript.json";
 
@@ -135,6 +138,9 @@ pub async fn sasayaki_transcribe(
         duration,
         remaining: None,
     });
+    // Linux: the saved tail lets the resumed transcription drop words it hears again.
+    #[cfg(target_os = "linux")]
+    let audio = audio.resuming_after(&transcript.tokens, transcript.through);
     if !transcript.is_complete() {
         let (sender, mut events) = mpsc::unbounded_channel();
         backend::start(&app, audio, transcript.through, performance, sender, cancel)?;
