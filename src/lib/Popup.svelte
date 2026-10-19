@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { CheckMenuItem, Menu } from "@tauri-apps/api/menu";
+  import { showContextMenu } from "./contextMenu";
   import { Pause, Play, RotateCcw, StepForward } from "@lucide/svelte";
   import type {
     FontInfo,
@@ -131,7 +132,7 @@
     const menu = await Menu.new({ items });
     menuOpen = true;
     try {
-      await menu.popup();
+      await showContextMenu(menu);
     } finally {
       menuOpen = false;
     }
