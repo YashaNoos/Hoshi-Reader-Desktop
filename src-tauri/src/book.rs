@@ -171,6 +171,7 @@ pub fn book_protocol(app: &AppHandle, request: Request<Vec<u8>>) -> Response<Vec
             "selection.js" => include_str!("../../src/reader/selection.js"),
             "paragraph.js" => include_str!("../../src/reader/paragraph.js"),
             "input.js" => include_str!("../../src/reader/input.js"),
+            "cursor.js" => include_str!("../../src/reader/cursor.js"),
             "boot.js" => include_str!("../../src/reader/boot.js"),
             "scrollreader.js" => include_str!("../../src/reader/scrollreader.js"),
             "scrollboot.js" => include_str!("../../src/reader/scrollboot.js"),
@@ -258,6 +259,7 @@ fn inject_scripts(bytes: Vec<u8>) -> Vec<u8> {
         r#"<script src="/__hoshi/highlights.js"></script>"#,
         r#"<script src="/__hoshi/paragraph.js"></script>"#,
         r#"<script src="/__hoshi/input.js"></script>"#,
+        r#"<script src="/__hoshi/cursor.js"></script>"#,
         r#"<script src="/__hoshi/boot.js"></script>"#,
     );
     let mut html = String::from_utf8_lossy(&bytes).into_owned();
@@ -291,6 +293,7 @@ fn continuous_shell(app: &AppHandle, id: &str) -> Option<Vec<u8>> {
         r#"<script src="/__hoshi/selection.js"></script>"#,
         r#"<script src="/__hoshi/highlights.js"></script>"#,
         r#"<script src="/__hoshi/input.js"></script>"#,
+        r#"<script src="/__hoshi/cursor.js"></script>"#,
         r#"<script src="/__hoshi/scrollboot.js"></script>"#,
     );
     let epub = Epub::open(library::book_epub_path(app, id)?).ok()?;

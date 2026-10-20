@@ -103,6 +103,24 @@
     send({ hoshi: "entry-action", action, slotIndex });
   }
 
+  // Linux build (0022): controller selects entries and scrolls the popup.
+  export function controllerAction(op: "entry" | "scroll", value: number) {
+    send({ hoshi: "controller", op, value });
+  }
+
+  /** For the controller readout: the entry list's position. */
+  export function scrollInfo(): string {
+    const list = iframeEl?.contentDocument?.getElementById("entries-container");
+    return list ? `${Math.round(list.scrollTop)}/${list.scrollHeight - list.clientHeight}` : "no list";
+  }
+
+  /** Whether the entry list can still scroll that way (the popup page is same-origin). */
+  export function canScroll(delta: number): boolean {
+    const list = iframeEl?.contentDocument?.getElementById("entries-container");
+    if (!list) return false;
+    return delta > 0 ? list.scrollTop + list.clientHeight < list.scrollHeight - 1 : list.scrollTop > 0;
+  }
+
   function popupConfig() {
     return {
       scale,

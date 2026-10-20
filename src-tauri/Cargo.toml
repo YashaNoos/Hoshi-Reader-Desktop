@@ -57,6 +57,8 @@ zbus-secret-service-keyring-store = { version = "1", features = ["rt-async-io-cr
 arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"] }
 # Wayland: anchor context menus to our own window (see context_menu.rs)
 gtk = "0.18"
+# Game controllers (see controller.rs): read from evdev, not through WebKitGTK
+gilrs = "0.11"
 symphonia = { version = "0.5", default-features = false, features = ["aac", "alac", "flac", "isomp4", "mkv", "mp3", "ogg", "pcm", "vorbis", "wav"] }
 
 [target.'cfg(windows)'.dependencies]

@@ -16,6 +16,7 @@
   import { readerConfig } from "./lib/readerConfig.svelte";
   import type { BookHighlight } from "./lib/highlights";
   import Settings, { settingsTabs, type SettingsTab } from "./lib/Settings.svelte";
+  import ControllerValues from "./lib/ControllerValues.svelte";
   import SourceList from "./lib/SourceList.svelte";
   import ChangelogDialog from "./lib/ChangelogDialog.svelte";
   import UpdateDialog from "./lib/UpdateDialog.svelte";
@@ -368,3 +369,4 @@
 
 <ChangelogDialog />
 <UpdateDialog />
+<ControllerValues />

@@ -71,6 +71,8 @@
   import SettingToggle from "./SettingToggle.svelte";
   import SettingRow from "./SettingRow.svelte";
   import SettingsSection from "./SettingsSection.svelte";
+  import ControllerSettings from "./ControllerSettings.svelte";
+  import Toast from "./Toast.svelte";
   import PageHeader from "./PageHeader.svelte";
 
   let {
@@ -164,6 +166,12 @@
 
   let bindingKey = $state<Exclude<keyof HotkeyConfig, "clickLookup" | "hidePopupOnCursorExit" | "hidePopupOnCursorExitDelay" | "disableReaderWheel" | "reversePageVertical" | "scanDelay" | "pageClickZone"> | null>(null);
   let bindingError = $state("");
+  // Linux build (0022): a key that cannot be assigned also shows as a notification, since
+  // the message under the sections is easy to miss.
+  let bindingToast = $state<Toast>();
+  $effect(() => {
+    if (bindingError) bindingToast?.show(bindingError, "error");
+  });
 
   function startBinding(key: Exclude<keyof HotkeyConfig, "clickLookup" | "hidePopupOnCursorExit" | "hidePopupOnCursorExitDelay" | "disableReaderWheel" | "reversePageVertical" | "scanDelay" | "pageClickZone">, button: HTMLButtonElement) {
     button.focus();
@@ -1419,6 +1427,8 @@
         {#if bindingError}
           <p class="select-text text-sm text-error">{bindingError}</p>
         {/if}
+        <ControllerSettings />
+        <Toast bind:this={bindingToast} />
       {:else if anki}
         <SettingsSection title="Anki">
           <SettingRow label="Enable">

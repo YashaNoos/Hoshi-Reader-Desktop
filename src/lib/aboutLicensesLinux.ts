@@ -29,6 +29,18 @@ export const aboutLicensesLinux = [
         "text": null
       },
       {
+        "name": "gilrs (game controller input)",
+        "license": "Apache-2.0 OR MIT",
+        "url": "https://gitlab.com/gilrs-project/gilrs",
+        "text": null
+      },
+      {
+        "name": "SDL_GameControllerDB (controller mappings, in gilrs)",
+        "license": "Zlib",
+        "url": "https://github.com/mdqinc/SDL_GameControllerDB",
+        "text": null
+      },
+      {
         "name": "sherpa-onnx",
         "license": "Apache-2.0",
         "url": "https://github.com/k2-fsa/sherpa-onnx",

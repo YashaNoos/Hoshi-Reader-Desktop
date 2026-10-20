@@ -40,6 +40,11 @@ body {
     padding: calc(4px * var(--popup-scale)) 0 calc(5px * var(--popup-scale));
 }
 
+.entry.controller-selected {
+    box-shadow: inset 3px 0 0 var(--accent-color, #f59e0b);
+    padding-left: calc(8px * var(--popup-scale));
+}
+
 .entry-header {
     display: flow-root;
     padding-top: calc(6px * var(--popup-scale));

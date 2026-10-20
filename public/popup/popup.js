@@ -1640,8 +1640,30 @@ async function mineEntryAtIndex(entryIndex, slotIndex) {
 
 let hoveredEntry = null;
 document.addEventListener('mouseover', e => {
-    hoveredEntry = e.target.closest?.('.entry') ?? hoveredEntry;
+    const entry = e.target.closest?.('.entry');
+    if (entry && entry !== hoveredEntry) { document.querySelector('.entry.controller-selected')?.classList.remove('controller-selected'); }
+    hoveredEntry = entry ?? hoveredEntry;
 });
+
+// Linux build (0022): a controller picks the entry that mining and audio act on.
+let controllerScroll = 0;
+function runControllerAction(op, value) {
+    if (op === 'scroll') {
+        // Small tilts give fractions of a pixel per frame: add them up so they still scroll.
+        controllerScroll += value;
+        const step = Math.trunc(controllerScroll);
+        controllerScroll -= step;
+        if (step) { (document.getElementById('entries-container') || document.scrollingElement).scrollBy(0, step); }
+        return;
+    }
+    const entries = [...document.querySelectorAll('.entry')];
+    if (!entries.length) { return; }
+    const index = hoveredEntry?.isConnected ? entries.indexOf(hoveredEntry) : 0;
+    const next = entries[Math.max(0, Math.min(entries.length - 1, index + value))];
+    entries.forEach(entry => entry.classList.toggle('controller-selected', entry === next));
+    hoveredEntry = next;
+    next.scrollIntoView({ block: next.offsetHeight > window.innerHeight ? 'start' : 'nearest' });
+}
 
 function runEntryAction(action, slotIndex) {
     const entryIndex = hoveredEntry?.isConnected ? Number(hoveredEntry.dataset.entryIndex) : 0;

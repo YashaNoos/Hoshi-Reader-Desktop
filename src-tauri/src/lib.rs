@@ -9,6 +9,8 @@ mod book;
 mod clipboard;
 #[cfg(target_os = "linux")]
 mod context_menu;
+#[cfg(target_os = "linux")]
+mod controller;
 mod crash;
 mod css;
 mod dict;
@@ -159,6 +161,8 @@ pub fn run() {
             context_menu::popup_menu_at_pointer,
             #[cfg(target_os = "linux")]
             appimage_theme::desktop_color_scheme,
+            #[cfg(target_os = "linux")]
+            controller::controller_state,
             #[cfg(windows)]
             media_controls::media_controls_metadata,
             #[cfg(windows)]

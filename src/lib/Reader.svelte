@@ -58,6 +58,13 @@
   import MatchDialog from "./MatchDialog.svelte";
   import { dictConfig } from "./dictConfig.svelte";
   import { hotkeyConfig, normalizeHotkey, readerHotkeys } from "./hotkeyConfig.svelte";
+  import {
+    controllerAction,
+    controllerConfig,
+    controllerDebug,
+    useControllerHandler,
+    type ControllerEvent,
+  } from "./controller.svelte";
   import { statsConfig } from "./statsConfig.svelte";
   import { syncConfig } from "./syncConfig.svelte";
   import { StatsTracker } from "./statsTracker.svelte";
@@ -519,10 +526,13 @@
     sentence: string = "",
     offset: number | null = null,
     chapterIndex: number = index,
+    closeOnMiss = false,
   ) {
     hider.cancel();
     const seq = ++lookupSeq;
     const response = await lookup(text);
+    // Linux build (0022): with the text cursor, a popup for another word would be misleading.
+    if (closeOnMiss && seq === lookupSeq && !response.entries.length) closePopups();
     if (seq !== lookupSeq || !response.entries.length) return;
     popupAnki = await invoke<PopupAnkiConfig>("anki_config");
     if (seq !== lookupSeq) return;
@@ -1309,6 +1319,111 @@
     else if (key === hotkeyConfig.playEntryAudio) popupViews[popups.length - 1]?.entryAction("audio");
   }
 
+  // Linux build (0022): game controller. Buttons act on the open popup first, then on the
+  // text cursor, then on reading (see controller.svelte.ts).
+  let cursorActive = $state(false);
+  let cursorEdge: "forward" | "backward" | null = null;
+  // The cursor pauses Sasayaki while it is on, and resumes it if it was playing.
+  let cursorPausedPlayback = false;
+
+  function setCursor(active: boolean) {
+    if (active === cursorActive) return;
+    cursorActive = active;
+    postToFrame({ hoshi: "cursor", op: active ? "start" : "stop" });
+    if (active) {
+      cursorPausedPlayback = !!sasayaki?.isPlaying;
+      if (cursorPausedPlayback) sasayaki?.togglePlayback();
+    } else {
+      closePopups();
+      if (cursorPausedPlayback && sasayaki && !sasayaki.isPlaying && !popups.length) sasayaki.togglePlayback();
+      cursorPausedPlayback = false;
+    }
+  }
+
+  function onController(event: ControllerEvent) {
+    if (loading || document.querySelector("dialog[open]")) return;
+    const popup = popupViews[popups.length - 1];
+    const follow = popups.length > 0;
+    if (event.type === "scroll") {
+      // The newest popup that can still move: a small popup opened by hovering (the text
+      // slides under the mouse pointer) must not stop the one being read.
+      const views = popupViews.slice(0, popups.length);
+      const target = views.findLast((view) => view?.canScroll(event.delta));
+      target?.controllerAction("scroll", event.delta);
+      if (controllerConfig.controllerShowValues) {
+        controllerDebug.scroll = popups.length
+          ? `${target ? `popup ${views.indexOf(target) + 1}/${popups.length}` : "no popup can move"} · ` +
+            `step ${event.delta.toFixed(1)} · lists ${views.map((view) => view?.scrollInfo() ?? "?").join(", ")}`
+          : "no popup open";
+      }
+      return;
+    }
+    if (event.type === "direction") {
+      if (cursorActive) {
+        postToFrame({ hoshi: "cursor", op: "move", dir: event.direction, follow });
+      } else if (event.direction === "left" || event.direction === "right") {
+        const reverse = vertical && hotkeyConfig.reversePageVertical;
+        postTurn((event.direction === "right") !== reverse ? "forward" : "backward");
+      }
+      return;
+    }
+    const audio = !!sasayaki?.hasAudio;
+    const swap = vertical && controllerConfig.controllerSwapVertical;
+    switch (controllerAction(event.button, { popup: follow, cursor: cursorActive })) {
+      case "playPause":
+        if (audio) toggleSasayakiPlayback();
+        break;
+      case "repeatCue":
+        if (audio) sasayaki?.repeatCue();
+        break;
+      case "previousCue":
+        if (audio) (swap ? sasayaki?.nextCue() : sasayaki?.prevCue());
+        break;
+      case "nextCue":
+        if (audio) (swap ? sasayaki?.prevCue() : sasayaki?.nextCue());
+        break;
+      case "toggleTracking":
+        toggleTracking();
+        break;
+      case "toggleCursor":
+        setCursor(!cursorActive);
+        break;
+      case "leaveCursor":
+        setCursor(false);
+        break;
+      case "lookup":
+        postToFrame({ hoshi: "cursor", op: "lookup" });
+        break;
+      case "previousWord":
+        postToFrame({ hoshi: "cursor", op: "word", step: swap ? 1 : -1, follow });
+        break;
+      case "nextWord":
+        postToFrame({ hoshi: "cursor", op: "word", step: swap ? -1 : 1, follow });
+        break;
+      case "mine1":
+        popup?.entryAction("mine", 0);
+        break;
+      case "mine2":
+        popup?.entryAction("mine", 1);
+        break;
+      case "mine3":
+        popup?.entryAction("mine", 2);
+        break;
+      case "playAudio":
+        popup?.entryAction("audio");
+        break;
+      case "previousEntry":
+        popup?.controllerAction("entry", -1);
+        break;
+      case "nextEntry":
+        popup?.controllerAction("entry", 1);
+        break;
+      case "closePopup":
+        closePopups(popups.length - 1);
+        break;
+    }
+  }
+
   function onMessage(e: MessageEvent) {
     if (pagesFrame && e.source === pagesFrame.contentWindow) {
       if (e.data?.hoshi === "pages" && e.data.run === String(pagesRun)) onSpineMeasured(e.data.starts);
@@ -1331,7 +1446,7 @@
     if (sourceKey !== frames[frames.length - 1]?.key) return;
     switch (m?.hoshi) {
       case "selected":
-        pressLookup = openLookup(m.text, m.rect, m.normalizedOffset, m.sentence, m.clozeOffset, m.spine ?? index);
+        pressLookup = openLookup(m.text, m.rect, m.normalizedOffset, m.sentence, m.clozeOffset, m.spine ?? index, cursorActive);
         break;
       case "lookup-miss":
         closePopups();
@@ -1352,6 +1467,13 @@
         break;
       case "reader-hotkey":
         onReaderHotkey(m.key, m.repeat);
+        break;
+      case "cursor-state":
+        cursorActive = m.active;
+        break;
+      case "cursor-edge":
+        cursorEdge = m.dir;
+        postTurn(m.dir);
         break;
       case "selection-menu":
         showSelectionMenu(e.source as Window);
@@ -1409,6 +1531,8 @@
       case "positioned": {
         loading = false;
         applyingBookmark = false;
+        if (cursorActive) postToFrame({ hoshi: "cursor", op: "start", at: cursorEdge === "backward" ? "last" : "first" });
+        cursorEdge = null;
         if (pendingSearchHighlight) {
           const chapter = bookInfo.chapterInfo[spine[index]];
           postToFrame({ hoshi: "search-highlight", spine: index, offset: pendingSearchHighlight.character - chapter.currentTotal, length: pendingSearchHighlight.length });
@@ -1583,11 +1707,13 @@
 
   $effect(() => {
     window.addEventListener("message", onMessage);
+    const releaseController = useControllerHandler(onController);
     window.addEventListener("keydown", onKey);
     window.addEventListener("resize", onResize);
     window.addEventListener("wheel", onWheel, { passive: false });
     return () => {
       window.removeEventListener("message", onMessage);
+      releaseController();
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("resize", onResize);
       window.removeEventListener("wheel", onWheel);
