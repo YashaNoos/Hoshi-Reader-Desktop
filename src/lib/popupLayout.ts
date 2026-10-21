@@ -34,8 +34,10 @@ export function calculatePopupLayout(
     ? Math.min(Math.max(spaceLeft, spaceRight) - screenBorderPadding, maxWidth)
     : Math.min(screenSize.width - screenBorderPadding * 2, maxWidth);
 
+  // Linux build (0023): in vertical text the popup also fits the window, or its bottom
+  // (and the end of its list) is out of reach.
   const height = isVertical
-    ? maxHeight
+    ? Math.max(0, Math.min(maxHeight, screenSize.height - topInset - bottomInset - screenBorderPadding * 2))
     : Math.min(Math.max(spaceAbove, spaceBelow) - screenBorderPadding, maxHeight);
 
   const showBelow = spaceBelow >= height;
