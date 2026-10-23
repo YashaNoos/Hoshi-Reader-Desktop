@@ -33,6 +33,8 @@ mod transcription;
 mod ttu_statistics;
 mod updater;
 mod wheel;
+#[cfg(target_os = "linux")]
+mod wheel_pixels;
 #[cfg(target_os = "macos")]
 mod writing_tools;
 
@@ -220,6 +222,8 @@ pub fn run() {
             #[cfg(target_os = "linux")]
             let builder = builder.initialization_script(media_server::init_script(app.handle()));
             let _window = builder.build()?;
+            #[cfg(target_os = "linux")]
+            wheel_pixels::install(&_window);
             #[cfg(windows)]
             media_controls::init(&_window).ok();
 
